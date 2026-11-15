@@ -2,7 +2,7 @@ FROM python:3.12-alpine
 
 LABEL org.opencontainers.image.title="minecraft-recon-framework" \
       org.opencontainers.image.description="Zero-dependency Minecraft network reconnaissance and administration framework" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="LicenseRef-Authorized-Use"
 
 WORKDIR /app
 
