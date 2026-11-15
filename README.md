@@ -1,6 +1,6 @@
 # minecraft-recon-framework
 
-**Zero-dependency Python network reconnaissance, wire-protocol dissection, and remote administration framework for Minecraft Java Edition infrastructure (`Python >= 3.10`, CPython standard library only).**
+**Zero-dependency Python network diagnostics, wire-protocol dissection, and remote administration framework for Minecraft Java Edition infrastructure (`Python >= 3.10`, CPython standard library only).**
 
 `minecraft-recon-framework` implements deterministic TCP and UDP socket state machines across all four network intelligence layers exposed by Minecraft Java Edition server daemons:
 
