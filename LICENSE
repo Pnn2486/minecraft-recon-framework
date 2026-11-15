@@ -1,20 +1,79 @@
-MIT License
+Authorized Use License
 
-Copyright (c) 2026 Pnn2486 and minecraft-recon-framework Contributors
+Copyright (c) 2026 Pnn2486 and minecraft-recon-framework Contributors.
+All rights reserved, except as expressly granted below.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+By downloading, copying, running, modifying, or otherwise interacting with the Software in any manner, You accept and agree to be bound by this License. If You do not agree, do not use this Software.
 
-The above copyright notice, this permission notice, and the following disclaimer
-shall be included in all copies or substantial portions of the Software.
 
-DISCLAIMER OF LIABILITY: THE CREATOR ACCEPTS NO RESPONSIBILITY FOR ANY MISUSE
-OF THE INFORMATION OR SOFTWARE PROVIDED. IF YOU DO NOT AGREE TO THESE TERMS,
-PLEASE LEAVE IMMEDIATELY AND DO NOT USE THIS SOFTWARE. THE SOFTWARE IS PROVIDED
-"AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE
-AND NONINFRINGEMENT.
+1. DEFINITIONS
+
+"Software" means the minecraft-recon-framework source code, tools, scripts, tests, and associated documentation contained in this repository.
+
+"Licensor" means Pnn2486 and the minecraft-recon-framework Contributors.
+
+"You" means any individual or entity exercising rights under this License.
+
+"Authorized Use" means use of the Software solely for network protocol research, education, systems administration, diagnostics, and security auditing of systems that You own, or for which You hold the explicit written permission of the owner to perform such activity.
+
+"Unauthorized Use" means any use that is not Authorized Use, including any access to, probing, scanning, or testing of a server, network, or system for which You do not hold that ownership or permission.
+
+
+2. GRANT OF LICENSE
+
+Subject to the terms of this License, the Licensor grants You a non-exclusive, non-transferable, royalty-free, worldwide, revocable license to use, copy, and modify the Software for Authorized Use only.
+
+
+3. REDISTRIBUTION
+
+You may redistribute copies of the Software, with or without modifications,
+only if all of the following conditions are met:
+
+  (a) every recipient receives this License together with the Software and is bound by it;
+  (b) all copyright, license, and legal notices, including COPYING.md, are retained unaltered;
+  (c) any modified version is clearly marked as modified; and
+  (d) the redistribution is made free of charge.
+
+Forking this repository on GitHub, as permitted by the GitHub Terms of
+Service, is not restricted by this Section.
+
+
+4. RESTRICTIONS
+
+You must not:
+
+  (a) engage in Unauthorized Use;
+  (b) use the Software to gain unauthorized access to, or to disrupt, degrade, overload, damage, or destroy data on, any server, network, or system;
+  (c) remove or alter the legal notices contained in the Software;
+  (d) sell, sublicense, rent, or offer the Software, or any service whose primary value is the Software, for a fee without prior written permission from the Licensor. Internal use of the Software by a business for Authorized Use is permitted; or
+  (e) use the name of the Software or of the Licensor in a way that suggests endorsement by, or affiliation with, the Licensor, Mojang, or Microsoft.
+
+
+5. CONTRIBUTIONS
+
+Any contribution You submit to the Software is licensed to the Licensor and to all recipients under the terms of this License. You confirm that You have the right to submit it.
+
+
+6. TERMINATION
+
+This License terminates automatically and without notice if You breach any of its terms. Upon termination You must cease all use of the Software and delete all copies in Your possession. Sections 7 through 10 survive termination.
+
+
+7. DISCLAIMER OF WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+
+8. LIMITATION OF LIABILITY
+
+IN NO EVENT SHALL THE LICENSOR, AUTHORS, OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES, SERVER DISRUPTION, DATA LOSS, PROPERTY DAMAGE, LEGAL CONSEQUENCES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR ITS USE OR MISUSE. YOU ARE SOLELY RESPONSIBLE FOR ENSURING THAT YOUR USE OF THE SOFTWARE IS AUTHORIZED AND LAWFUL. UNAUTHORIZED ACCESS TO COMPUTER SYSTEMS IS ILLEGAL IN MOST JURISDICTIONS AND MAY RESULT IN CRIMINAL PROSECUTION AND CIVIL LIABILITY.
+
+
+9. NO AFFILIATION
+
+Minecraft is a trademark of Mojang AB. The Software is an independent project and is not affiliated with, endorsed by, or approved by Mojang or Microsoft.
+
+
+10. GENERAL
+
+This License, together with COPYING.md, is the entire agreement between You and the Licensor concerning the Software. If the two conflict, the more restrictive term applies. If any provision of this License is held to be unenforceable, the remaining provisions remain in full effect. Failure to enforce any provision is not a waiver of it.
