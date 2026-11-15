@@ -38,7 +38,7 @@ def gamespy4_full_query(
         challenge_token = int(token_ascii)
 
         stat_req = struct.pack(
-            ">HBII4s",
+            ">HBIi4s",
             GAMESPY4_MAGIC,
             PACKET_TYPE_STAT,
             masked_session,
@@ -70,7 +70,7 @@ def gamespy4_full_query(
             "players": players,
         }
 
-    except ValueError as exc:
+    except (ValueError, struct.error) as exc:
         raise ProtocolFramingError(f"Failed to parse GameSpy4 challenge token: {exc}") from exc
     except OSError as exc:
         raise ReconError(
