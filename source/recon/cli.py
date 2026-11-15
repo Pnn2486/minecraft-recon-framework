@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import sys
 from recon.exceptions import ReconError
 from recon.protocols.ping import mc_status_ping
@@ -19,6 +20,44 @@ COMPLIANCE_BANNER = (
 )
 
 
+def _parse_int(text: str) -> int:
+    try:
+        return int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid integer value: {text!r}") from None
+
+
+def port_number(text: str) -> int:
+    value = _parse_int(text)
+    if not 1 <= value <= 65535:
+        raise argparse.ArgumentTypeError(f"{value} is not a valid port (expected 1-65535)")
+    return value
+
+
+def positive_int(text: str) -> int:
+    value = _parse_int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"{value} must be at least 1")
+    return value
+
+
+def non_negative_int(text: str) -> int:
+    value = _parse_int(text)
+    if value < 0:
+        raise argparse.ArgumentTypeError(f"{value} must not be negative")
+    return value
+
+
+def positive_seconds(text: str) -> float:
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid number: {text!r}") from None
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError(f"{text} must be a positive number of seconds")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="recon",
@@ -32,19 +71,19 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Protocol state machine to execute",
     )
-    parser.add_argument("--port", type=int, default=25565, help="Target TCP/UDP game port (default: 25565)")
-    parser.add_argument("--rcon-port", type=int, default=25575, help="Target TCP RCON port (default: 25575)")
-    parser.add_argument("--timeout", type=float, default=5.0, help="Socket timeout in seconds (default: 5.0)")
+    parser.add_argument("--port", type=port_number, default=25565, help="Target TCP/UDP game port (default: 25565)")
+    parser.add_argument("--rcon-port", type=port_number, default=25575, help="Target TCP RCON port (default: 25575)")
+    parser.add_argument("--timeout", type=positive_seconds, default=5.0, help="Socket timeout in seconds (default: 5.0)")
     parser.add_argument("--password", default="", help="RCON authentication secret (required for --mode rcon)")
     parser.add_argument("--cmd", default="list", help="Console command payload for RCON execution (default: list)")
     parser.add_argument("--username", default="AuditNode", help="Login Start (0x00) username for --mode ghost")
     parser.add_argument(
         "--protocol-version",
-        type=int,
+        type=non_negative_int,
         default=754,
         help="Minecraft protocol version integer for --mode ghost (default: 754 / 1.16.5)",
     )
-    parser.add_argument("--duration", type=int, default=30, help="Session listen TTL in seconds for --mode ghost")
+    parser.add_argument("--duration", type=positive_int, default=30, help="Session listen TTL in seconds for --mode ghost")
     parser.add_argument("--quiet", action="store_true", help="Suppress compliance banner for JSON piping")
     return parser
 
@@ -100,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     except ReconError as exc:
         print(f"[!] Protocol Audit Error: {exc}", file=sys.stderr)
         return 1
-    except (OSError, ConnectionError) as exc:
+    except OSError as exc:
         print(f"[!] Network Transport Error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
