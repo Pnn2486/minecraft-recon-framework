@@ -1,12 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "minecraft-recon-framework"
 version = "1.1.0"
 description = "Zero-dependency Python network reconnaissance, wire-protocol dissection, and remote administration framework for Minecraft Java Edition servers."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "COPYING.md" }
+license = { file = "LICENSE" }
 authors = [
     { name = "Pnn2486" }
+]
+keywords = ["minecraft", "network-programming", "rcon", "gamespy4", "protocol-analysis"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Networking :: Monitoring",
 ]
 dependencies = []
 
