@@ -7,7 +7,7 @@
 1. **TCP Server List Ping (`0x00` Status + `0x01` Latency Probe):** Unauthenticated descriptor extraction (MOTD, protocol version integer, server brand, favicon payload, sample player UUIDs) paired with a 64-bit big-endian timestamp echo for true Round-Trip Time (`latency_ms`) measurement.
 2. **UDP GameSpy4 Full Stat Query (`0xFEFD`):** Stateless two-phase challenge-response handshake extracting uncapped online player arrays, server engine identifiers, active plugin matrices, and world map topology.
 3. **TCP Source RCON (`0x03` / `0x02`):** Authenticated 32-bit signed little-endian administrative tunnel (`RCONClient`) for remote command execution, tick-rate (`TPS`, Paper/Spigot servers only) auditing, and memory profiling.
-4. **TCP Play-State Headless Client (`0x02` Login -> Play):** Stateful virtual client supporting offline UUID v3 generation, dynamic RFC 1950 `zlib` frame compression (`0x03`), automated 64-bit `Keep-Alive` (`0x1F` -> `0x10`) heartbeat echoing, and real-time `0x0E` chat packet scraping.
+4. **TCP Play-State Headless Client (`0x02` Login -> Play):** Stateful virtual client supporting offline UUID v3 generation, dynamic RFC 1950 `zlib` frame compression (`0x03`), automated 64-bit `Keep-Alive` heartbeat echoing, and chat packet reporting. Packet IDs are per-version (`0x1F` -> `0x10` and `0x0E` are the 1.16.5 values); only Minecraft 1.16.5 and 1.21 - 1.21.1 are supported, see [Section 7](#7-known-limitations--test-status).
 >[!WARNING]
 > Not affiliated with, endorsed by, or approved by Mojang or Microsoft. Minecraft is a trademark of Mojang.
 
@@ -28,7 +28,8 @@
       - `ping.py` - TCP `0x00` Status + `0x01` RTT latency
       - `query.py` - UDP `0xFEFD` GameSpy4 challenge/response
       - `rcon.py` - TCP little-endian Source RCON client
-      - `ghost.py` - TCP play-state client (zlib, Keep-Alive, chat)
+      - `ghost.py` - TCP play-state client (zlib, Configuration phase, Keep-Alive, chat)
+      - `ghost_profiles.py` - per-version packet ID tables for `ghost.py`
 - **.github**
   - **workflows**
     - `ci.yml` - matrix CI on Linux & macOS, Python 3.10-3.12
@@ -157,10 +158,19 @@ Valve Source RCON frames integers in **32-bit signed little-endian** (`<i`) byte
    ```text
    [VarInt: Frame Length] [VarInt: Uncompressed Data Length] [zlib.compress(Packet ID + Payload)]
    ```
-3. **Play-State Heartbeat Loop (`0x1F` -> `0x10`):** Echoes 64-bit big-endian Keep-Alive IDs (`>q`) to maintain socket persistence while decoding incoming `0x0E` JSON chat packets.
+3. **Configuration Phase (1.20.2+ only):** After `Login Success (0x02)`, the client sends `Login Acknowledged`, answers the server's Known Packs with an empty list, echoes Keep-Alive and Ping, and acknowledges `Finish Configuration` before entering Play.
+4. **Play-State Heartbeat Loop:** Echoes 64-bit big-endian Keep-Alive IDs (`>q`) to maintain socket persistence and reports incoming chat packets. Packet IDs come from the profile for the selected `--protocol-version`.
 
 >[!NOTE]
-> **Compatibility:** The packet IDs in `ghost.py` (`0x1F`, `0x10`, `0x0E`, `0x19`) are hard-coded for Minecraft 1.16.5 (protocol `754`), the only version this mode is designed for. Later versions use different packet IDs, and 1.20.2+ adds a configuration phase, so `ghost` mode may not reach the Play state on newer servers.
+> **Compatibility:** Packet IDs change in almost every Minecraft release, so `ghost` mode only runs versions that have a profile in `ghost_profiles.py`. Any other `--protocol-version` is rejected before connecting.
+>
+> | Protocol | Minecraft | Status |
+> | :--- | :--- | :--- |
+> | `754` | 1.16.5 | Implemented, tested against a local mock server only |
+> | `767` | 1.21 - 1.21.1 | Implemented from the published protocol tables (includes Configuration phase), tested against a local mock server only |
+> | all others | 1.17 - 1.20.6, 1.21.2+ | **Not supported** (no packet table yet) |
+>
+> Neither supported version has been run against a real Minecraft server by the authors. Chat on `767` is reported as a packet size only, because signed chat and NBT text are not decoded.
 
 ---
 
@@ -278,7 +288,7 @@ except ReconError as err:
 | `--password` | `str` | `""` | RCON authentication secret (required for `--mode rcon`) |
 | `--cmd` | `str` | `"list"` | Server console command payload for RCON execution |
 | `--username` | `str` | `"AuditNode"` | `Login Start (0x00)` username for `ghost` mode |
-| `--protocol-version` | `int` | `754` | Protocol version integer for `ghost` mode (`754` = 1.16.5, `767` = 1.21) |
+| `--protocol-version` | `int` | `754` | Protocol version integer for `ghost` mode (`754` = 1.16.5, `767` = 1.21 / 1.21.1; others are rejected) |
 | `--duration` | `int` | `30` | Socket read-loop TTL in seconds for `ghost` mode |
 | `--quiet` | `flag` | `False` | Suppress compliance banner on `stderr` for clean JSON piping |
 
@@ -289,9 +299,46 @@ except ReconError as err:
 
 ---
 
-## 7. Protocol specifications & technical references
+## 7. Known limitations & test status
+
+Please read this before relying on the tool.
+
+### 7.1 What has and has not been tested
+
+* **Automated tests use fake servers only.** The test suite (`tests/test_protocols.py`) starts small imitation servers on `127.0.0.1` that were written from the published protocol specifications. They prove the code follows those specifications. They do **not** prove it works against every real server.
+* **No mode has been verified against a real Minecraft server by the authors.** This applies to `ping`, `query`, `rcon` and `ghost` alike. Treat the first run against your own server as the real test, and open an issue if something differs.
+* **Python versions:** the code is written for Python `3.10+`. CI runs `3.10`, `3.11` and `3.12` on Linux and macOS. Windows is supported by design but is not part of CI.
+
+### 7.2 Minecraft version support
+
+| Mode | Version dependence | Status |
+| :--- | :--- | :--- |
+| `ping` | Version independent. | Expected to work on any Java Edition server. |
+| `query` | Version independent. Needs `enable-query=true` in `server.properties` and an open UDP port. | Expected to work on any server that has query enabled. |
+| `rcon` | Version independent. Needs `enable-rcon=true` and an RCON password. | Expected to work on any server that has RCON enabled. |
+| `ghost` | **Version specific**, because packet IDs change between releases. | Only `754` (1.16.5) and `767` (1.21 - 1.21.1). Every other `--protocol-version` is rejected before connecting. |
+
+### 7.3 Known limitations of `ghost` mode
+
+* **Offline-mode servers only.** The target must have `online-mode=false`. Servers that require Mojang authentication reply with an Encryption Request, and the client stops with `OnlineModeRequiredError`. It does not implement encryption or authentication.
+* **Unsupported versions:** Minecraft 1.17 - 1.20.6 and 1.21.2 or newer have no packet table yet. Supporting one means adding a verified entry to `source/recon/protocols/ghost_profiles.py`.
+* **Chat on 1.21 / 1.21.1 is not decoded.** Signed player chat and NBT text components are reported as a packet ID and size only. Chat on 1.16.5 is shown as raw JSON text.
+* **Passive behavior.** The client echoes Keep-Alive and Ping packets and ignores world data. It does not move, send chat, or load chunks. Servers with anti-bot plugins, whitelists, or proxies (BungeeCord, Velocity) may kick it.
+* **Listening window.** Sessions end after `--duration` seconds, or earlier if the server sends nothing for the socket timeout.
+
+### 7.4 Other limitations
+
+* **Java Edition only.** Bedrock Edition uses different protocols and is not supported.
+* **Addressing.** The UDP `query` mode is IPv4 only. The TCP modes (`ping`, `rcon`, `ghost`) accept IPv4 or IPv6. SRV record lookups (`_minecraft._tcp`) are not performed, so use the real host and port.
+* **`tps` is not a vanilla command.** It exists only on Paper, Spigot and compatible servers.
+* **Legal responsibility stays with you.** Use the tool only on servers you own or have written permission to test. See [COPYING.md](./COPYING.md).
+
+---
+
+## 8. Protocol specifications & technical references
 
 * **Minecraft Modern TCP Protocol & Base-128 VarInt Specification:** [wiki.vg/Protocol](https://wiki.vg/Protocol)
 * **Server List Ping (`0x00` Status & `0x01` Ping/Pong Specification):** [wiki.vg/Server_List_Ping](https://wiki.vg/Server_List_Ping)
 * **GameSpy4 (`0xFEFD`) UDP Query Protocol Specification:** [wiki.vg/Query](https://wiki.vg/Query)
 * **Valve Source RCON Binary Packet Specification:** [developer.valvesoftware.com/wiki/Source_RCON_Protocol](https://developer.valvesoftware.com/wiki/Source_RCON_Protocol)
+m
