@@ -1,102 +1,66 @@
 #!/usr/bin/env python3
 """
-Wire-Frame Hexadecimal and VarInt Diagnostic Inspector.
-Generates and verifies raw byte frames for TCP Ping, UDP GameSpy4, and Source RCON.
-
+Sequential multi-protocol reconnaissance audit script.
 Usage:
-    PYTHONPATH=source python3 tools/packet_inspector.py
-    PYTHONPATH=source python3 tools/packet_inspector.py --self-test
+    PYTHONPATH=source python3 scripts/run_recon.py
 """
 
-import argparse
-import struct
+import os
 import sys
-from recon.utils.varint import (
-    pack_varint,
-    pack_string,
-    read_varint_bytes,
-    offline_player_uuid_bytes,
-)
+from recon.exceptions import ReconError
+from recon.protocols.ping import mc_status_ping
+from recon.protocols.query import gamespy4_full_query
+from recon.protocols.rcon import rcon_command
+
+TARGET_HOST = os.environ.get("MC_TARGET_HOST", "127.0.0.1")
+TARGET_PORT = int(os.environ.get("MC_TARGET_PORT", "25565"))
+RCON_PORT = int(os.environ.get("MC_RCON_PORT", "25575"))
+RCON_PASSWORD = os.environ.get("MC_RCON_PASSWORD", "")
 
 
-def format_hexdump(data: bytes, width: int = 16) -> str:
-    """Formats a raw byte sequence into an aligned 16-byte Hex + ASCII table."""
-    lines = []
-    for offset in range(0, len(data), width):
-        chunk = data[offset : offset + width]
-        hex_cols = " ".join(f"{b:02X}" for b in chunk)
-        ascii_cols = "".join(chr(b) if 32 <= b <= 126 else "." for b in chunk)
-        lines.append(f"  {offset:04X}  {hex_cols:<{width * 3}}  |{ascii_cols}|")
-    return "\n".join(lines)
+def run_sequential_audit() -> int:
+    print(f"[*] Target Node: {TARGET_HOST} (Game: {TARGET_PORT}, RCON: {RCON_PORT})")
+    print("-" * 72)
 
+    print("[1/3] Probing TCP Server List Ping (Packet 0x00)...")
+    try:
+        ping_data = mc_status_ping(TARGET_HOST, TARGET_PORT, timeout=5.0, measure_latency=True)
+        version_info = ping_data.get("version", {})
+        players_info = ping_data.get("players", {})
+        print(f"  [+] Version      : {version_info.get('name')} (Protocol {version_info.get('protocol')})")
+        print(f"  [+] Players      : {players_info.get('online')}/{players_info.get('max')}")
+        print(f"  [+] RTT Latency  : {ping_data.get('latency_ms')} ms")
+    except ReconError as exc:
+        print(f"  [-] TCP Ping Failed: {exc}", file=sys.stderr)
 
-def build_handshake_frame(host: str, port: int, protocol: int = 767, next_state: int = 1) -> bytes:
-    """Constructs a complete length-prefixed TCP 0x00 Handshake wire frame."""
-    payload = (
-        pack_varint(0x00)
-        + pack_varint(protocol)
-        + pack_string(host)
-        + struct.pack(">H", port)
-        + pack_varint(next_state)
-    )
-    return pack_varint(len(payload)) + payload
+    print("-" * 72)
 
+    print("[2/3] Probing UDP GameSpy4 Full Stat Query (0xFEFD)...")
+    try:
+        query_data = gamespy4_full_query(TARGET_HOST, TARGET_PORT, timeout=5.0)
+        meta = query_data.get("metadata", {})
+        print(f"  [+] Server Engine: {meta.get('version', 'Unknown')}")
+        print(f"  [+] World Map    : {meta.get('map', 'Unknown')}")
+        print(f"  [+] Plugins      : {meta.get('plugins', 'None / Vanilla')}")
+        print(f"  [+] Full Players ({query_data.get('player_count', 0)}): {query_data.get('players')}")
+    except ReconError as exc:
+        print(f"  [-] UDP Query Failed: {exc}", file=sys.stderr)
 
-def build_gamespy4_challenge_frame(session_id: int = 0x01020304) -> bytes:
-    """Constructs a 7-byte UDP GameSpy4 0xFEFD Handshake Challenge datagram."""
-    masked_session = session_id & 0x0F0F0F0F
-    return struct.pack(">HBI", 0xFEFD, 0x09, masked_session)
+    print("-" * 72)
 
+    print("[3/3] Probing TCP Source RCON Administrative Tunnel...")
+    if not RCON_PASSWORD:
+        print("  [~] Skipped: MC_RCON_PASSWORD environment variable is not set.")
+    else:
+        try:
+            output = rcon_command(TARGET_HOST, RCON_PORT, RCON_PASSWORD, "list", timeout=5.0)
+            print(f"  [+] RCON '/list' : {output.strip()}")
+        except ReconError as exc:
+            print(f"  [-] RCON Failed  : {exc}", file=sys.stderr)
 
-def build_rcon_auth_frame(req_id: int, password: str) -> bytes:
-    """Constructs a signed little-endian TCP Source RCON Type 3 Auth frame."""
-    body = password.encode("utf-8") + b"\x00\x00"
-    size = 4 + 4 + len(body)
-    return struct.pack("<iii", size, req_id, 3) + body
-
-
-def run_inspector(host: str, port: int, self_test: bool = False) -> int:
-    tcp_frame = build_handshake_frame(host, port, protocol=767, next_state=1)
-    decoded_len, payload_offset = read_varint_bytes(tcp_frame, 0)
-    udp_frame = build_gamespy4_challenge_frame()
-    rcon_frame = build_rcon_auth_frame(req_id=100, password="audit_password")
-    uuid_bytes = offline_player_uuid_bytes("AuditNode")
-
-    if self_test:
-        assert len(tcp_frame) == decoded_len + payload_offset, "TCP VarInt length mismatch"
-        assert udp_frame[:3] == b"\xfe\xfd\x09", "UDP GameSpy4 magic header mismatch"
-        assert struct.unpack("<i", rcon_frame[:4])[0] == len(rcon_frame) - 4, "RCON size mismatch"
-        assert len(uuid_bytes) == 16, "Offline UUID must be 16 bytes"
-        print("[+] Wire-frame self-test passed: All binary headers verified.")
-        return 0
-
-    print("=== [1] TCP 0x00 Status Handshake Frame ===")
-    print(f"  Target Host        : {host}:{port}")
-    print(f"  Total Wire Bytes   : {len(tcp_frame)} bytes (VarInt prefix = {decoded_len} bytes)")
-    print(format_hexdump(tcp_frame))
-
-    print("\n=== [2] UDP 0xFEFD GameSpy4 Challenge Frame ===")
-    print(f"  Total Wire Bytes   : {len(udp_frame)} bytes")
-    print(format_hexdump(udp_frame))
-
-    print("\n=== [3] TCP Source RCON Type 3 Auth Frame (Little-Endian) ===")
-    print(f"  Total Wire Bytes   : {len(rcon_frame)} bytes")
-    print(format_hexdump(rcon_frame))
-
-    print("\n=== [4] Offline Player UUID v3 (MD5 'OfflinePlayer:AuditNode') ===")
-    print(f"  Total Wire Bytes   : {len(uuid_bytes)} bytes")
-    print(format_hexdump(uuid_bytes))
+    print("-" * 72)
     return 0
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Minecraft Wire-Frame Hexdump Inspector")
-    parser.add_argument("--host", default="127.0.0.1", help="Sample hostname for framing")
-    parser.add_argument("--port", type=int, default=25565, help="Sample port for framing")
-    parser.add_argument("--self-test", action="store_true", help="Run silent assertion checks for CI")
-    args = parser.parse_args()
-    return run_inspector(args.host, args.port, args.self_test)
-
-
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(run_sequential_audit())
