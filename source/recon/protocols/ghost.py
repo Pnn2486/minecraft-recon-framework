@@ -1,7 +1,9 @@
 """
 Protocol 4: Offline-Mode Play-State Headless Client.
-Supports dynamic Zlib compression (0x03), Keep-Alive heartbeat echoing,
-and real-time Chat packet extraction.
+Supports dynamic Zlib compression (0x03), the 1.20.2+ Configuration phase,
+Keep-Alive heartbeat echoing, and chat packet reporting.
+
+Packet IDs are version specific and live in `recon.protocols.ghost_profiles`.
 """
 
 import socket
@@ -14,6 +16,7 @@ from recon.exceptions import (
     ProtocolFramingError,
     ReconError,
 )
+from recon.protocols.ghost_profiles import GhostProfile, get_profile
 from recon.utils.varint import (
     pack_varint,
     pack_string,
@@ -60,15 +63,24 @@ def _recv_framed_packet(sock: socket.socket, compression_threshold: int) -> tupl
     return pkt_id, payload[offset:]
 
 
-def _build_login_start_packet(username: str, protocol_version: int) -> bytes:
+def _build_login_start_packet(username: str, profile: GhostProfile) -> bytes:
     """
-    Constructs Login Start (0x00) tailored to the target protocol version:
-    - Protocol <= 758 (1.16.5 - 1.18.2): [0x00] [String: Username]
-    - Protocol >= 764 (1.20.2 - 1.21+):  [0x00] [String: Username] [UUID: 16 bytes]
+    Constructs Login Start (0x00):
+    - 1.16.5 - 1.20.1: [0x00] [String: Username]
+    - 1.20.2 and newer: [0x00] [String: Username] [UUID: 16 bytes]
     """
-    if protocol_version >= 764:
+    if profile.login_start_has_uuid:
         return pack_varint(0x00) + pack_string(username) + offline_player_uuid_bytes(username)
     return pack_varint(0x00) + pack_string(username)
+
+
+def _report_chat(profile: GhostProfile, pkt_id: int, data: bytes) -> None:
+    if profile.chat_is_json_string:
+        chat_json, _ = read_string_bytes(data, 0)
+        print(f"[CHAT] {chat_json}")
+    else:
+        # Signed player chat and NBT text components are not decoded.
+        print(f"[CHAT] packet 0x{pkt_id:02X} ({len(data)} bytes, not decoded)")
 
 
 def headless_ghost_stream(
@@ -81,10 +93,14 @@ def headless_ghost_stream(
 ) -> None:
     """
     Connects to an offline-mode server (`online-mode=false`), negotiates zlib compression,
-    transitions to Play State, echoes 64-bit Keep-Alive tokens, and streams chat frames.
+    passes through the Configuration phase when the version has one, enters Play State,
+    echoes Keep-Alive tokens, and reports chat packets.
+
+    Raises UnsupportedProtocolError (before connecting) when `protocol_version` has no profile.
     """
+    profile = get_profile(protocol_version)
     compression_threshold = -1
-    in_play_state = False
+    state = "login"  # login -> (configuration ->) play
 
     try:
         with socket.create_connection((host, port), timeout=timeout) as sock:
@@ -96,15 +112,13 @@ def headless_ghost_stream(
                 + pack_varint(2)
             )
             _send_framed_packet(sock, handshake, compression_threshold)
-
-            login_start = _build_login_start_packet(username, protocol_version)
-            _send_framed_packet(sock, login_start, compression_threshold)
+            _send_framed_packet(sock, _build_login_start_packet(username, profile), compression_threshold)
 
             start_ts = time.time()
             while time.time() - start_ts < duration:
                 pkt_id, data = _recv_framed_packet(sock, compression_threshold)
 
-                if not in_play_state:
+                if state == "login":
                     if pkt_id == 0x00:
                         reason, _ = read_string_bytes(data, 0)
                         raise AuthenticationError(f"Login Disconnect (0x00): {reason}")
@@ -119,23 +133,61 @@ def headless_ghost_stream(
                         print(f"[+] Negotiated Zlib Compression Threshold: {compression_threshold} bytes")
 
                     elif pkt_id == 0x02:
-                        in_play_state = True
-                        print(f"[+] Login Success (0x02): '{username}' entered Play State.")
+                        if profile.has_configuration_phase:
+                            _send_framed_packet(
+                                sock, pack_varint(profile.login_acknowledged_out), compression_threshold
+                            )
+                            state = "configuration"
+                            print(f"[+] Login Success (0x02): '{username}' entering Configuration phase.")
+                        else:
+                            state = "play"
+                            print(f"[+] Login Success (0x02): '{username}' entered Play State.")
+
+                elif state == "configuration":
+                    if pkt_id == profile.config_disconnect_in:
+                        print(f"[!] Server Configuration Disconnect (0x{pkt_id:02X})")
+                        break
+
+                    elif pkt_id == profile.config_keep_alive_in and len(data) == 8:
+                        _send_framed_packet(
+                            sock, pack_varint(profile.config_keep_alive_out) + data, compression_threshold
+                        )
+                        print("[~] Echoed Keep-Alive (configuration)")
+
+                    elif pkt_id == profile.config_ping_in and len(data) == 4:
+                        _send_framed_packet(
+                            sock, pack_varint(profile.config_pong_out) + data, compression_threshold
+                        )
+
+                    elif pkt_id == profile.config_known_packs_in:
+                        # Reply "no known packs" (empty array); the server waits for this reply.
+                        _send_framed_packet(
+                            sock, pack_varint(profile.config_known_packs_out) + pack_varint(0), compression_threshold
+                        )
+
+                    elif pkt_id == profile.config_finish_in:
+                        _send_framed_packet(
+                            sock, pack_varint(profile.config_finish_ack_out), compression_threshold
+                        )
+                        state = "play"
+                        print(f"[+] Configuration finished: '{username}' entered Play State.")
 
                 else:
-                    if pkt_id == 0x1F and len(data) == 8:
+                    if pkt_id == profile.play_keep_alive_in and len(data) == 8:
                         keep_alive_id = struct.unpack(">q", data)[0]
-                        pong_frame = pack_varint(0x10) + struct.pack(">q", keep_alive_id)
+                        pong_frame = pack_varint(profile.play_keep_alive_out) + struct.pack(">q", keep_alive_id)
                         _send_framed_packet(sock, pong_frame, compression_threshold)
-                        print(f"[~] Echoed Keep-Alive Heartbeat (0x10): ID={keep_alive_id}")
+                        print(f"[~] Echoed Keep-Alive Heartbeat (0x{profile.play_keep_alive_out:02X}): ID={keep_alive_id}")
 
-                    elif pkt_id == 0x0E:
-                        chat_json, _ = read_string_bytes(data, 0)
-                        print(f"[CHAT] {chat_json}")
+                    elif pkt_id in profile.play_chat_ids:
+                        _report_chat(profile, pkt_id, data)
 
-                    elif pkt_id == 0x19:
-                        reason, _ = read_string_bytes(data, 0)
-                        print(f"[!] Server Play-State Disconnect (0x19): {reason}")
+                    elif pkt_id == profile.play_disconnect:
+                        if profile.chat_is_json_string:
+                            reason, _ = read_string_bytes(data, 0)
+                        else:
+                            reason = f"({len(data)} bytes, not decoded)"
+                        print(f"[!] Server Play-State Disconnect (0x{pkt_id:02X}): {reason}")
                         break
 
     except OSError as exc:
