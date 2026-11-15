@@ -13,3 +13,10 @@ execute any files from this project.**
    under the MIT License (see [LICENSE](./LICENSE)).
    
 4. **Acknowledgement**: By downloading, copying, running, modifying, or otherwise interacting with the Software or Tools provided in the `minecraft-recon-framework` repository in any manner or way or form, you acknowledge that you have read, understood, and agreed to be bound by the terms of this notice, of [COPYING.md](./COPYING.md), and of the [LICENSE](./LICENSE).
+
+5. **Legal notice:** Accessing, probing, scanning, or testing any server, network, or system that you do not directly own, or for which you do not hold explicit written permission from the owner, is strictly prohibited. This applies equally to penetration testing and security research.
+
+Unauthorized access is illegal in most jurisdictions and may result in criminal prosecution, civil lawsuits, fines, damages, and other serious legal consequences.
+
+**Under no circumstances may this Software be used for unauthorized access.** The authors and contributors do not condone any instances of such use and accept no responsibility for it.
+
