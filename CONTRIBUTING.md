@@ -46,7 +46,7 @@ Run these from the repository root before opening a pull request, and make sure 
 
 ```bash
 python3 -m unittest discover -s tests -v
-python3 tools/packet_inspector.py
+python3 tools/packet_inspector.py --self-test
 ```
 
 On Windows, use `python` instead of `python3`.
@@ -55,7 +55,7 @@ On Windows, use `python` instead of `python3`.
 
 1. Fork the repository and create a branch from `main`, for example `git checkout -b fix/short-description`.
 2. Keep each pull request focused on one change, with clear commit messages.
-3. Add or update tests in `tests/` for any protocol or serialization change. Tests must use `unittest` and must not need network access.
+3. Add or update tests in `tests/` for any protocol or serialization change. Tests must use `unittest` and may only use loopback (`127.0.0.1`) sockets, never external networks.
 4. Update `README.md` when behavior, flags, or requirements change.
 5. Open the pull request and describe what changed, why, and how you tested it, including the Python version and Minecraft server version you used.
 
@@ -72,4 +72,4 @@ Never post real server addresses, credentials, or logs from servers you do not o
 
 ## License
 
-By contributing, you agree that your contributions are licensed under the project's MIT License (see [LICENSE](./LICENSE)).
+By contributing, you agree that your contributions are licensed under the project's Authorized Use License (see [LICENSE](./LICENSE)).
