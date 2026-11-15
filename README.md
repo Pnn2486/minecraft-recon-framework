@@ -54,11 +54,12 @@ Because `minecraft-recon-framework` operates directly on raw POSIX/Winsock netwo
 
 | Hardware Component | Minimum Specification (Single-Node Audit) | Recommended Specification (Concurrent / CI / Container Fleet) | Technical Justification |
 | :--- | :--- | :--- | :--- |
-| **CPU Cores / Threads** | 1 vCPU / 1 Hardware Thread (`>= 1.0 GHz`, x86_64 or ARM64) | 2-4 vCPUs / 4+ Hardware Threads (`>= 2.4 GHz`) | Single-target probes are I/O-bound waiting on network RTT; multi-threaded batch auditing and `zlib` stream decompression (`0x03`) scale across CPU threads. |
-| **System Memory (RAM)** | `64 MB` free RAM (`~18-25 MB` active CPython resident set size) | `512 MB - 1 GB` RAM | `ghost.py` processes `zlib` buffers in-memory; `512 MB+` prevents OOM kills when running inside Docker/Podman containers or parallel cron jobs. |
+| **CPU Cores / Threads** | 1 vCPU / 1 Hardware Thread (`>= 1.5 GHz`, x86_64 or ARM64, 64-bit OS) | 2-4 vCPUs / 4+ Hardware Threads (`>= 2.4 GHz`) | Single-target probes are I/O-bound waiting on network RTT; multi-threaded batch auditing and `zlib` stream decompression (`0x03`) scale across CPU threads. |
+| **System Memory (RAM)** | `128 MB` free RAM (`~20-40 MB` active CPython `3.10+` resident set size, plus headroom) | `1 GB - 2 GB` RAM | `ghost.py` processes `zlib` buffers in-memory; `1 GB+` prevents OOM kills when running inside Docker/Podman containers or parallel cron jobs. |
 | **GPU / Compute Threads** | **0 GPU Threads (None / Headless)** | **0 GPU Threads (None / Headless)** | Unlike the official Minecraft client, this framework bypasses LWJGL, OpenGL, and Vulkan entirely. It runs natively on headless Linux servers, SSH terminals, and cloud VMs without a GPU or display server (`X11`/`Wayland`). |
-| **Disk Storage** | `5 MB` free disk space | `250 MB` free disk space (if building OCI/Docker images) | Pure-Python source tree is `< 100 KB`; extra space is only required if storing JSON audit logs or Alpine Linux container layers. |
-| **Network Interface** | `1 Mbps` IPv4/IPv6 NIC | `100 Mbps+` low-jitter Ethernet / VPC interface | Play-state `ghost` mode receives continuous chunk, entity, and chat packets from active servers (`~50-250 KB/s` per session). |
+| **Disk Storage** | `200 MB` free disk space (includes a Python `3.10+` install if you don't already have one) | `1 GB` free disk space (if building OCI/Docker images or keeping logs) | Pure-Python source tree is `< 100 KB`; the interpreter is the main cost. Extra space is only required if storing JSON audit logs or Alpine Linux container layers. |
+| **Network Interface** | `5 Mbps` IPv4/IPv6 NIC | `100 Mbps+` low-jitter Ethernet / VPC interface | Play-state `ghost` mode receives continuous chunk, entity, and chat packets from active servers (`~50-250 KB/s`, up to `~2 Mbps`, per session); `ping`, `query` and `rcon` use only a few KB per run. |
+| **Network Reliability** | Round-trip time `< 500 ms` to target, packet loss `< 5%`, working DNS resolution | Round-trip time `< 100 ms`, packet loss `< 1%` | The default socket timeout is `5.0 s`; unacknowledged UDP `query` datagrams and long-running `ghost` sessions fail on unstable or heavily lossy links. |
 
 ### 2.2 Supported operating systems
 
