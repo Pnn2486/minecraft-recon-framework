@@ -8,6 +8,9 @@
 2. **UDP GameSpy4 Full Stat Query (`0xFEFD`):** Stateless two-phase challenge-response handshake extracting uncapped online player arrays, server engine identifiers, active plugin matrices, and world map topology.
 3. **TCP Source RCON (`0x03` / `0x02`):** Authenticated 32-bit signed little-endian administrative tunnel (`RCONClient`) for remote command execution, tick-rate (`TPS`) auditing, and memory profiling.
 4. **TCP Play-State Headless Client (`0x02` Login -> Play):** Stateful virtual client supporting offline UUID v3 generation, dynamic RFC 1950 `zlib` frame compression (`0x03`), automated 64-bit `Keep-Alive` (`0x1F` -> `0x10`) heartbeat echoing, and real-time `0x0E` chat packet scraping.
+>[!WARNING]
+> Not affiliated with, endorsed by, or approved by Mojang or Microsoft. Minecraft is a trademark of Mojang.
+
 >[!IMPORTANT]
 > **Authorization & Compliance Notice:** This framework is engineered strictly for systems administrators, infrastructure engineers, and security researchers conducting authorized diagnostics on nodes they own or hold explicit written permission to audit. Refer to [COPYING.md](./COPYING.md) for full liability terms.
 
