@@ -72,7 +72,7 @@ def run_inspector(host: str, port: int, self_test: bool = False) -> int:
 
     print("=== [1] TCP 0x00 Status Handshake Frame ===")
     print(f"  Target Host        : {host}:{port}")
-    print(f"  Total Wire Bytes   : {len(tcp_frame)} bytes (VarInt prefix = {decoded_len} bytes)")
+    print(f"  Total Wire Bytes   : {len(tcp_frame)} bytes (payload {decoded_len} bytes + {payload_offset}-byte VarInt length prefix)")
     print(format_hexdump(tcp_frame))
 
     print("\n=== [2] UDP 0xFEFD GameSpy4 Challenge Frame ===")
