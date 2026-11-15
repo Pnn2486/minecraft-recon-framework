@@ -4,7 +4,7 @@
   "package": "recon",
   "version": "1.1.0",
   "repository": "https://github.com/Pnn2486/minecraft-recon-framework",
-  "license": "MIT",
+  "license": "LicenseRef-Authorized-Use",
   "python_requires": ">=3.10",
   "dependencies": [],
   "protocols": {
@@ -49,7 +49,8 @@
       "default_port": 25565,
       "handshake_next_state": 2,
       "compression": "zlib (RFC 1950)",
-      "supported_protocol_versions": [754, 758, 760, 763, 767],
+      "supported_protocol_versions": [754],
+      "experimental_protocol_versions": [758, 760, 763, 767],
       "server_property_prerequisite": "online-mode=false"
     }
   }
