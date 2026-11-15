@@ -5,7 +5,7 @@
   "version": "1.1.0",
   "repository": "https://github.com/Pnn2486/minecraft-recon-framework",
   "license": "MIT",
-  "python_requires": ">=3.8",
+  "python_requires": ">=3.10",
   "dependencies": [],
   "protocols": {
     "server_list_ping": {
