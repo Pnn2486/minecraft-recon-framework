@@ -1,4 +1,4 @@
-name: CI & Protocol Framing Verification
+name: CI and Protocol Framing Verification
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   verify:
-    name: Python ${{ matrix.python-version }} ({{ matrix.os }})
+    name: Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -28,21 +28,21 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Verify bytecode compilation (strict syntax check)
+      - name: Verify bytecode compilation
         run: |
           python3 -m py_compile \
-            src/mcrecon/*.py \
-            src/mcrecon/utils/*.py \
-            src/mcrecon/protocols/*.py \
+            source/recon/*.py \
+            source/recon/utils/*.py \
+            source/recon/protocols/*.py \
             scripts/run_recon.py \
             tools/packet_inspector.py
 
       - name: Execute automated unit test suite
         env:
-          PYTHONPATH: src
+          PYTHONPATH: source
         run: python3 -m unittest discover -s tests -v
 
       - name: Execute wire-frame inspector self-check
         env:
-          PYTHONPATH: src
+          PYTHONPATH: source
         run: python3 tools/packet_inspector.py --self-test
