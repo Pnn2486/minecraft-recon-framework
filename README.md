@@ -12,47 +12,40 @@
 > **Authorization & Compliance Notice:** This framework is engineered strictly for systems administrators, infrastructure engineers, and security researchers conducting authorized diagnostics on nodes they own or hold explicit written permission to audit. Refer to [COPYING.md](./COPYING.md) for full liability terms.
 
 ---
+
 ## 1. Repository architecture & module map
 
-```mermaid
-flowchart LR
-    root["minecraft-recon-framework/"]
-
-    root --> gh[".github/workflows/"] --> ci["ci.yml<br/>Matrix CI, Python 3.10-3.12"]
-    root --> pi["program_info/"] --> manifest["org.recon.Framework.json<br/>Protocol and port manifest"]
-    root --> sc["scripts/"] --> run["run_recon.py<br/>Multi-protocol audit script"]
-
-    root --> src["source/recon/"]
-    src --> cli["cli.py<br/>Argument parser and entry point"]
-    src --> exc["exceptions.py<br/>Exception hierarchy"]
-    src --> utils["utils/"] --> varint["varint.py<br/>VarInt, recv_exact, UUID v3"]
-    src --> prot["protocols/"]
-    prot --> ping["ping.py<br/>TCP status and latency"]
-    prot --> query["query.py<br/>UDP GameSpy4 query"]
-    prot --> rcon["rcon.py<br/>Source RCON client"]
-    prot --> ghost["ghost.py<br/>Play-state client"]
-
-    root --> tests["tests/"] --> tv["test_varint.py<br/>Unit tests"]
-    root --> tools["tools/"] --> pk["packet_inspector.py<br/>Hex + ASCII inspector"]
-
-    root --> f1[".editorconfig"]
-    root --> f2[".gitattributes"]
-    root --> f3[".gitignore"]
-    root --> f4["CODE_OF_CONDUCT.md"]
-    root --> f5["CONTRIBUTING.md"]
-    root --> f6["COPYING.md"]
-    root --> f7["Containerfile"]
-    root --> f8["LICENSE"]
-    root --> f9["pyproject.toml"]
-    root --> f10["README.md"]
-
-    classDef folder fill:#1f6feb,stroke:#58a6ff,color:#ffffff;
-    classDef file fill:#161b22,stroke:#30363d,color:#e6edf3;
-    class root,gh,pi,sc,src,utils,prot,tests,tools folder;
-    class ci,manifest,run,cli,exc,varint,ping,query,rcon,ghost,tv,pk,f1,f2,f3,f4,f5,f6,f7,f8,f9,f10 file;
-```
-
-
+- **source**
+  - **recon** - core Python package (PEP 420)
+    - `cli.py` - argument parser, validation & dispatch entry point
+    - `exceptions.py` - structured exception hierarchy (`ReconError`, etc.)
+    - **utils**
+      - `varint.py` - Base-128 VarInt, `recv_exact` & UUID v3 generators
+    - **protocols**
+      - `ping.py` - TCP `0x00` Status + `0x01` RTT latency
+      - `query.py` - UDP `0xFEFD` GameSpy4 challenge/response
+      - `rcon.py` - TCP little-endian Source RCON client
+      - `ghost.py` - TCP play-state client (zlib, Keep-Alive, chat)
+- **.github**
+  - **workflows**
+    - `ci.yml` - matrix CI on Linux & macOS, Python 3.10-3.12
+- **program_info**
+  - `org.recon.Framework.json` - protocol & port manifest
+- **scripts**
+  - `run_recon.py` - automated multi-protocol audit script
+- **tools**
+  - `packet_inspector.py` - hex + ASCII wire-frame inspector
+- **tests**
+  - `test_varint.py` - unit tests for serialization & framing
+    
+- `pyproject.toml` - build spec & CLI entry point
+- `Containerfile` - Docker / Podman container spec
+- `README.md` - this file
+- `CONTRIBUTING.md` - pull request & coding standards
+- `CODE_OF_CONDUCT.md` - community conduct rules & ethical-use standard
+- `COPYING.md` - liability disclaimer
+- `LICENSE` - MIT license
+- `.editorconfig`, `.gitattributes`, `.gitignore` - other neccessary files
 
 - - -
 
