@@ -6,7 +6,7 @@
 
 1. **TCP Server List Ping (`0x00` Status + `0x01` Latency Probe):** Unauthenticated descriptor extraction (MOTD, protocol version integer, server brand, favicon payload, sample player UUIDs) paired with a 64-bit big-endian timestamp echo for true Round-Trip Time (`latency_ms`) measurement.
 2. **UDP GameSpy4 Full Stat Query (`0xFEFD`):** Stateless two-phase challenge-response handshake extracting uncapped online player arrays, server engine identifiers, active plugin matrices, and world map topology.
-3. **TCP Source RCON (`0x03` / `0x02`):** Authenticated 32-bit signed little-endian administrative tunnel (`RCONClient`) for remote command execution, tick-rate (`TPS`) auditing, and memory profiling.
+3. **TCP Source RCON (`0x03` / `0x02`):** Authenticated 32-bit signed little-endian administrative tunnel (`RCONClient`) for remote command execution, tick-rate (`TPS`, Paper/Spigot servers only) auditing, and memory profiling.
 4. **TCP Play-State Headless Client (`0x02` Login -> Play):** Stateful virtual client supporting offline UUID v3 generation, dynamic RFC 1950 `zlib` frame compression (`0x03`), automated 64-bit `Keep-Alive` (`0x1F` -> `0x10`) heartbeat echoing, and real-time `0x0E` chat packet scraping.
 >[!WARNING]
 > Not affiliated with, endorsed by, or approved by Mojang or Microsoft. Minecraft is a trademark of Mojang.
@@ -40,6 +40,7 @@
   - `packet_inspector.py` - hex + ASCII wire-frame inspector
 - **tests**
   - `test_varint.py` - unit tests for serialization & framing
+  - `test_protocols.py` - loopback tests for ping, query, RCON, ghost and CLI validation
     
 - `pyproject.toml` - build spec & CLI entry point
 - `Containerfile` - Docker / Podman container spec
@@ -47,8 +48,8 @@
 - `CONTRIBUTING.md` - pull request & coding standards
 - `CODE_OF_CONDUCT.md` - community conduct rules & ethical-use standard
 - `COPYING.md` - liability disclaimer
-- `LICENSE` - MIT license
-- `.editorconfig`, `.gitattributes`, `.gitignore` - other neccessary files
+- `LICENSE` - Authorized Use License
+- `.editorconfig`, `.gitattributes`, `.gitignore` - other necessary files
 
 - - -
 
@@ -126,7 +127,7 @@ GameSpy4 runs over unconnected UDP datagrams (`SOCK_DGRAM`) and enforces a state
 2. **Challenge Response (`Server -> Client`):**
    `Type (0x09, B)` + `SessionID (>I)` + `Null-terminated ASCII integer token`.
 3. **Full Stat Request (`Client -> Server`, 15 bytes):**
-   `Magic (0xFEFD, >H)` + `Type (0x00, B)` + `SessionID (>I)` + `ChallengeToken (>I)` + `Padding (0x00000000, 4B)`.
+   `Magic (0xFEFD, >H)` + `Type (0x00, B)` + `SessionID (>I)` + `ChallengeToken (>i, signed)` + `Padding (0x00000000, 4B)`.
 4. **Full Stat Response (`Server -> Client`):**
    * **Header (`16 bytes`):** `\x00` + `SessionID (4B)` + `b"splitnum\x00\x80\x00"`.
    * **K/V Metadata:** Null-delimited (`\x00`) alternating key/value strings.
@@ -158,6 +159,9 @@ Valve Source RCON frames integers in **32-bit signed little-endian** (`<i`) byte
    ```
 3. **Play-State Heartbeat Loop (`0x1F` -> `0x10`):** Echoes 64-bit big-endian Keep-Alive IDs (`>q`) to maintain socket persistence while decoding incoming `0x0E` JSON chat packets.
 
+>[!NOTE]
+> **Compatibility:** The packet IDs in `ghost.py` (`0x1F`, `0x10`, `0x0E`, `0x19`) are hard-coded for Minecraft 1.16.5 (protocol `754`), the only version this mode is designed for. Later versions use different packet IDs, and 1.20.2+ adds a configuration phase, so `ghost` mode may not reach the Play state on newer servers.
+
 ---
 
 ## 4. Environment setup & OS execution workflows
@@ -172,12 +176,12 @@ export PYTHONPATH="$(pwd)/source"
 
 # Verify unit tests and wire-frame assertions
 python3 -m unittest discover -s tests -v
-python3 tools/packet_inspector.py
+python3 tools/packet_inspector.py --self-test
 
 # Execute protocol state machines
 python3 -m recon.cli --host 127.0.0.1 --port 25565 --mode ping
 python3 -m recon.cli --host 127.0.0.1 --port 25565 --mode query
-python3 -m recon.cli --host 127.0.0.1 --rcon-port 25575 --password "rcon_secret" --cmd "tps" --mode rcon
+python3 -m recon.cli --host 127.0.0.1 --rcon-port 25575 --password "rcon_secret" --cmd "list" --mode rcon
 python3 -m recon.cli --host 127.0.0.1 --port 25565 --username "AuditNode" --duration 60 --mode ghost
 ```
 
@@ -254,7 +258,7 @@ try:
     with RCONClient("127.0.0.1", port=25575, timeout=5.0) as rcon:
         rcon.authenticate("your_rcon_password")
         print(rcon.execute("list"))
-        print(rcon.execute("tps"))
+        print(rcon.execute("tps"))  # Paper/Spigot only; vanilla servers have no tps command
 
 except ReconError as err:
     print(f"Audit exception: {err}")
@@ -280,7 +284,7 @@ except ReconError as err:
 
 * **Exit Code `0`:** Handshake and payload deserialization succeeded.
 * **Exit Code `1`:** `ReconError`, `ProtocolFramingError`, `AuthenticationError`, or socket timeout.
-* **Exit Code `2`:** Invalid or missing mandatory CLI flag.
+* **Exit Code `2`:** Invalid or missing mandatory CLI flag, or a value out of range (for example a port outside 1-65535, or a timeout of 0 or less).
 * **Exit Code `130`:** Operator `SIGINT` (`Ctrl+C`) termination.
 
 ---
