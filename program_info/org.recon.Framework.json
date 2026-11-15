@@ -1,0 +1,56 @@
+{
+  "app_id": "org.recon.Framework",
+  "name": "minecraft-recon-framework",
+  "package": "recon",
+  "version": "1.1.0",
+  "repository": "https://github.com/Pnn2486/minecraft-recon-framework",
+  "license": "MIT",
+  "python_requires": ">=3.8",
+  "dependencies": [],
+  "protocols": {
+    "server_list_ping": {
+      "module": "recon.protocols.ping",
+      "transport": "TCP",
+      "default_port": 25565,
+      "handshake_next_state": 1,
+      "packet_ids": {
+        "handshake": "0x00",
+        "status_request": "0x00",
+        "latency_ping": "0x01"
+      }
+    },
+    "gamespy4_query": {
+      "module": "recon.protocols.query",
+      "transport": "UDP",
+      "default_port": 25565,
+      "magic_header": "0xFEFD",
+      "session_mask": "0x0F0F0F0F",
+      "packet_types": {
+        "handshake_challenge": "0x09",
+        "stat_request": "0x00"
+      },
+      "server_property_prerequisite": "enable-query=true"
+    },
+    "source_rcon": {
+      "module": "recon.protocols.rcon",
+      "transport": "TCP",
+      "default_port": 25575,
+      "byte_order": "little-endian (<i)",
+      "packet_types": {
+        "auth": 3,
+        "exec_command": 2,
+        "response_value": 0
+      },
+      "server_property_prerequisite": "enable-rcon=true"
+    },
+    "headless_ghost": {
+      "module": "recon.protocols.ghost",
+      "transport": "TCP",
+      "default_port": 25565,
+      "handshake_next_state": 2,
+      "compression": "zlib (RFC 1950)",
+      "supported_protocol_versions": [754, 758, 760, 763, 767],
+      "server_property_prerequisite": "online-mode=false"
+    }
+  }
+}
