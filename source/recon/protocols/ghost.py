@@ -65,22 +65,32 @@ def _recv_framed_packet(sock: socket.socket, compression_threshold: int) -> tupl
 
 def _build_login_start_packet(username: str, profile: GhostProfile) -> bytes:
     """
-    Constructs Login Start (0x00):
-    - 1.16.5 - 1.20.1: [0x00] [String: Username]
-    - 1.20.2 and newer: [0x00] [String: Username] [UUID: 16 bytes]
+    Constructs Login Start (0x00). The bytes after the username depend on the version
+    (see LOGIN_START_FORMATS in ghost_profiles.py).
     """
-    if profile.login_start_has_uuid:
-        return pack_varint(0x00) + pack_string(username) + offline_player_uuid_bytes(username)
-    return pack_varint(0x00) + pack_string(username)
+    packet = pack_varint(0x00) + pack_string(username)
+    fmt = profile.login_start_format
+    if fmt == "name_sig":
+        packet += b"\x00"  # no signature data
+    elif fmt == "name_sig_uuid":
+        packet += b"\x00\x00"  # no signature data, no UUID
+    elif fmt == "name_uuid_opt":
+        packet += b"\x00"  # no UUID
+    elif fmt == "name_uuid":
+        packet += offline_player_uuid_bytes(username)
+    return packet
 
 
 def _report_chat(profile: GhostProfile, pkt_id: int, data: bytes) -> None:
-    if profile.chat_is_json_string:
-        chat_json, _ = read_string_bytes(data, 0)
-        print(f"[CHAT] {chat_json}")
-    else:
-        # Signed player chat and NBT text components are not decoded.
-        print(f"[CHAT] packet 0x{pkt_id:02X} ({len(data)} bytes, not decoded)")
+    if pkt_id in profile.play_chat_json_ids:
+        try:
+            chat_json, _ = read_string_bytes(data, 0)
+            print(f"[CHAT] {chat_json}")
+            return
+        except ProtocolFramingError:
+            pass
+    # Signed player chat and NBT text components are not decoded.
+    print(f"[CHAT] packet 0x{pkt_id:02X} ({len(data)} bytes, not decoded)")
 
 
 def headless_ghost_stream(
@@ -148,7 +158,7 @@ def headless_ghost_stream(
                         print(f"[!] Server Configuration Disconnect (0x{pkt_id:02X})")
                         break
 
-                    elif pkt_id == profile.config_keep_alive_in and len(data) == 8:
+                    elif pkt_id == profile.config_keep_alive_in and data:
                         _send_framed_packet(
                             sock, pack_varint(profile.config_keep_alive_out) + data, compression_threshold
                         )
@@ -173,20 +183,22 @@ def headless_ghost_stream(
                         print(f"[+] Configuration finished: '{username}' entered Play State.")
 
                 else:
-                    if pkt_id == profile.play_keep_alive_in and len(data) == 8:
-                        keep_alive_id = struct.unpack(">q", data)[0]
-                        pong_frame = pack_varint(profile.play_keep_alive_out) + struct.pack(">q", keep_alive_id)
+                    if pkt_id == profile.play_keep_alive_in and data:
+                        # The token is an int, VarInt or long depending on the version; echoing the raw bytes works for all.
+                        pong_frame = pack_varint(profile.play_keep_alive_out) + data
                         _send_framed_packet(sock, pong_frame, compression_threshold)
-                        print(f"[~] Echoed Keep-Alive Heartbeat (0x{profile.play_keep_alive_out:02X}): ID={keep_alive_id}")
+                        print(f"[~] Echoed Keep-Alive Heartbeat (0x{profile.play_keep_alive_out:02X}): {len(data)} bytes")
 
-                    elif pkt_id in profile.play_chat_ids:
+                    elif pkt_id in profile.play_chat_json_ids or pkt_id in profile.play_chat_opaque_ids:
                         _report_chat(profile, pkt_id, data)
 
                     elif pkt_id == profile.play_disconnect:
-                        if profile.chat_is_json_string:
-                            reason, _ = read_string_bytes(data, 0)
-                        else:
-                            reason = f"({len(data)} bytes, not decoded)"
+                        reason = f"({len(data)} bytes, not decoded)"
+                        if profile.text_is_json:
+                            try:
+                                reason, _ = read_string_bytes(data, 0)
+                            except ProtocolFramingError:
+                                pass
                         print(f"[!] Server Play-State Disconnect (0x{pkt_id:02X}): {reason}")
                         break
 
