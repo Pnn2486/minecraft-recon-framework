@@ -1,43 +1,49 @@
 """
 Per-version packet tables for the headless ghost client.
 
-Packet IDs change between Minecraft releases, so each supported protocol number
-maps to one `GhostProfile`. A protocol number without a profile is rejected
-before any connection is made, instead of silently misreading packets.
+Packet IDs change between Minecraft releases, so each supported protocol number maps to one `GhostProfile`. A protocol number without a profile is rejected before any connection is made, instead of silently misreading packets.
 
-Status of each profile:
-    754 (1.16.5)         Original target of the ghost client.
-    767 (1.21, 1.21.1)   IDs taken from the published protocol documentation for
-                         1.21.1. Includes the Configuration phase added in 1.20.2.
+The raw numbers live in `ghost_profile_data.py`. To support a new release, append a row there; nothing in this file or in `ghost.py` needs to change unless the new release alters the login or configuration sequence itself.
 
-Neither profile has been run against a real server by the authors of this change;
-both are exercised only by the loopback mock servers in tests/test_protocols.py.
-Treat them as "implemented to spec", not "field tested".
+Status: every profile is exercised by the loopback mock servers in tests/test_protocols.py.
+None has been run against a real server by the authors. Treat them as "implemented from published protocol data", not "field tested".
 """
 
 from dataclasses import dataclass
 
 from recon.exceptions import ReconError
+from recon.protocols.ghost_profile_data import ROWS
 
 
 class UnsupportedProtocolError(ReconError):
     """Raised when --protocol-version has no ghost profile."""
 
 
+# How the Login Start packet is built after the username:
+#   name           nothing else                         (1.8 - 1.18.2)
+#   name_sig       "no signature data"                  (1.19)
+#   name_sig_uuid  "no signature data", "no UUID"       (1.19.1 - 1.19.2)
+#   name_uuid_opt  "no UUID"                            (1.19.3 - 1.20.1)
+#   name_uuid      16-byte offline UUID                 (1.20.2 and newer)
+LOGIN_START_FORMATS = ("name", "name_sig", "name_sig_uuid", "name_uuid_opt", "name_uuid")
+
+
 @dataclass(frozen=True)
 class GhostProfile:
+    protocol: int
     name: str
-    login_start_has_uuid: bool
+    login_start_format: str
     has_configuration_phase: bool
     # Play state
     play_keep_alive_in: int
     play_keep_alive_out: int
     play_disconnect: int
-    play_chat_ids: frozenset[int]
-    chat_is_json_string: bool
-    # Login state (same for all supported versions, kept here for clarity)
-    login_acknowledged_out: int = 0x03
-    # Configuration state (only used when has_configuration_phase is True)
+    play_chat_json_ids: frozenset[int]
+    play_chat_opaque_ids: frozenset[int]
+    text_is_json: bool
+    # Login state
+    login_acknowledged_out: int = -1
+    # Configuration state (only used when has_configuration_phase is True; -1 means "not present")
     config_disconnect_in: int = -1
     config_finish_in: int = -1
     config_finish_ack_out: int = -1
@@ -48,38 +54,55 @@ class GhostProfile:
     config_known_packs_in: int = -1
     config_known_packs_out: int = -1
 
+    @property
+    def login_start_has_uuid(self) -> bool:
+        return self.login_start_format == "name_uuid"
 
-PROFILES: dict[int, GhostProfile] = {
-    754: GhostProfile(
-        name="1.16.5",
-        login_start_has_uuid=False,
-        has_configuration_phase=False,
-        play_keep_alive_in=0x1F,
-        play_keep_alive_out=0x10,
-        play_disconnect=0x19,
-        play_chat_ids=frozenset({0x0E}),
-        chat_is_json_string=True,
-    ),
-    767: GhostProfile(
-        name="1.21 - 1.21.1",
-        login_start_has_uuid=True,
+
+def _none_to_missing(value: int | None) -> int:
+    return -1 if value is None else value
+
+
+def _build(row: tuple) -> GhostProfile:
+    (protocol, label, fmt, ka_in, ka_out, disconnect, json_ids, opaque_ids, text_json, cfg) = row
+    if fmt not in LOGIN_START_FORMATS:
+        raise ValueError(f"unknown login start format {fmt!r} for protocol {protocol}")
+    common = dict(
+        protocol=protocol,
+        name=label,
+        login_start_format=fmt,
+        play_keep_alive_in=ka_in,
+        play_keep_alive_out=ka_out,
+        play_disconnect=disconnect,
+        play_chat_json_ids=frozenset(json_ids),
+        play_chat_opaque_ids=frozenset(opaque_ids),
+        text_is_json=text_json,
+    )
+    if cfg is None:
+        return GhostProfile(has_configuration_phase=False, **common)
+    (dis, fin, fin_ack, ka_c_in, ka_c_out, ping, pong, kp_in, kp_out, login_ack) = cfg
+    return GhostProfile(
         has_configuration_phase=True,
-        play_keep_alive_in=0x26,
-        play_keep_alive_out=0x18,
-        play_disconnect=0x1D,
-        play_chat_ids=frozenset({0x39, 0x6C}),  # Player Chat, System Chat
-        chat_is_json_string=False,  # signed chat / NBT text components
-        config_disconnect_in=0x02,
-        config_finish_in=0x03,
-        config_finish_ack_out=0x03,
-        config_keep_alive_in=0x04,
-        config_keep_alive_out=0x04,
-        config_ping_in=0x05,
-        config_pong_out=0x05,
-        config_known_packs_in=0x0E,
-        config_known_packs_out=0x07,
-    ),
-}
+        login_acknowledged_out=login_ack,
+        config_disconnect_in=dis,
+        config_finish_in=fin,
+        config_finish_ack_out=fin_ack,
+        config_keep_alive_in=ka_c_in,
+        config_keep_alive_out=ka_c_out,
+        config_ping_in=ping,
+        config_pong_out=pong,
+        config_known_packs_in=_none_to_missing(kp_in),
+        config_known_packs_out=_none_to_missing(kp_out),
+        **common,
+    )
+
+
+PROFILES: dict[int, GhostProfile] = {row[0]: _build(row) for row in ROWS}
+
+
+def supported_versions() -> str:
+    """Human-readable list such as '47 (1.8), 107 (1.9), ...'."""
+    return ", ".join(f"{num} ({p.name})" for num, p in sorted(PROFILES.items()))
 
 
 def get_profile(protocol_version: int) -> GhostProfile:
@@ -87,7 +110,6 @@ def get_profile(protocol_version: int) -> GhostProfile:
     try:
         return PROFILES[protocol_version]
     except KeyError:
-        supported = ", ".join(f"{num} ({p.name})" for num, p in sorted(PROFILES.items()))
         raise UnsupportedProtocolError(
-            f"Ghost mode has no packet table for protocol {protocol_version}. Supported: {supported}."
+            f"Ghost mode has no packet table for protocol {protocol_version}. Supported: {supported_versions()}."
         ) from None
