@@ -29,7 +29,7 @@ from recon.exceptions import (
     ReconError,
 )
 from recon.protocols.ghost import headless_ghost_stream
-from recon.protocols.ghost_profiles import UnsupportedProtocolError
+from recon.protocols.ghost_profiles import PROFILES, GhostProfile, UnsupportedProtocolError
 from recon.protocols.ping import mc_status_ping
 from recon.protocols.query import gamespy4_full_query
 from recon.protocols.rcon import RCONClient, rcon_command
@@ -372,7 +372,7 @@ class TestGhost(unittest.TestCase):
         self.assertIn("Play-State Disconnect (0x1D)", output)
 
     def test_unsupported_protocol_is_rejected_before_connecting(self) -> None:
-        for version in (758, 760, 763, 764, 765, 766, 768, 0):
+        for version in (-1, 0, 5, 46, 600, 776, 99999):
             with self.subTest(version=version):
                 with self.assertRaises(UnsupportedProtocolError):
                     headless_ghost_stream(HOST, port=_unused_port(), protocol_version=version, duration=1)
@@ -381,6 +381,127 @@ class TestGhost(unittest.TestCase):
         with TcpServer(_online_mode_handler) as server:
             with self.assertRaises(OnlineModeRequiredError):
                 headless_ghost_stream(HOST, port=server.port, duration=5, timeout=5.0)
+
+
+def _expected_login_start(profile: GhostProfile, username: str) -> bytes:
+    """Independent description of the Login Start payload for each protocol era."""
+    name = _mc_string(username)
+    if profile.protocol <= 758:
+        return name
+    if profile.protocol == 759:
+        return name + b"\x00"
+    if profile.protocol == 760:
+        return name + b"\x00\x00"
+    if profile.protocol <= 763:
+        return name + b"\x00"
+    return name  # 764+: followed by a 16-byte UUID, checked separately
+
+
+def _profile_handler_factory(profile: GhostProfile, state: dict):
+    """Generic fake server for any profile: Login -> (Configuration) -> Play."""
+    # The keep-alive token is a VarInt before 1.12.2 and a long afterwards; the client must echo raw bytes.
+    token = _varint(300) if profile.protocol < 340 else struct.pack(">q", 1234567890123)
+    state["token"] = token
+    state["steps"] = {}
+
+    def handler(conn: socket.socket) -> None:
+        _recv_exact(conn, _read_varint(conn))  # handshake
+        login = _recv_exact(conn, _read_varint(conn))
+        state["login"] = login
+        conn.sendall(_frame(_varint(0x03) + _varint(256)))
+        conn.sendall(_compressed(_varint(0x02) + b"\x00" * 20))  # login success
+
+        if profile.has_configuration_phase:
+            state["steps"]["login_ack"] = _read_compressed_packet(conn)
+            conn.sendall(_compressed(_varint(profile.config_keep_alive_in) + struct.pack(">q", 42)))
+            state["steps"]["config_keepalive"] = _read_compressed_packet(conn)
+            if profile.config_known_packs_in >= 0:
+                conn.sendall(_compressed(_varint(profile.config_known_packs_in) + _varint(0)))
+                state["steps"]["known_packs"] = _read_compressed_packet(conn)
+            conn.sendall(_compressed(_varint(profile.config_finish_in)))
+            state["steps"]["finish_ack"] = _read_compressed_packet(conn)
+
+        conn.sendall(_compressed(_varint(profile.play_keep_alive_in) + token))
+        state["steps"]["play_keepalive"] = _read_compressed_packet(conn)
+        for chat_id in sorted(profile.play_chat_json_ids):
+            conn.sendall(_compressed(_varint(chat_id) + _mc_string('{"text":"hello"}')))
+        for chat_id in sorted(profile.play_chat_opaque_ids):
+            conn.sendall(_compressed(_varint(chat_id) + b"\x0a\x00\x00"))
+        conn.sendall(_compressed(_varint(profile.play_disconnect) + _mc_string('{"text":"bye"}')))
+
+    return handler
+
+
+class TestGhostAllProfiles(unittest.TestCase):
+    """Runs the whole ghost flow against a fake server for every supported protocol."""
+
+    def test_every_profile_completes_login_configuration_and_play(self) -> None:
+        for protocol, profile in sorted(PROFILES.items()):
+            with self.subTest(protocol=protocol, version=profile.name):
+                state: dict = {}
+                captured = io.StringIO()
+                with TcpServer(_profile_handler_factory(profile, state)) as server:
+                    with contextlib.redirect_stdout(captured):
+                        headless_ghost_stream(
+                            HOST, port=server.port, username="AuditNode",
+                            protocol_version=protocol, duration=5, timeout=5.0,
+                        )
+                output = captured.getvalue()
+                login = state["login"]
+                prefix = _varint(0x00) + _expected_login_start(profile, "AuditNode")
+                self.assertTrue(login.startswith(prefix), "Login Start prefix mismatch")
+                extra = login[len(prefix):]
+                self.assertEqual(len(extra), 16 if protocol >= 764 else 0)
+
+                steps = state["steps"]
+                self.assertEqual(
+                    steps["play_keepalive"], _varint(profile.play_keep_alive_out) + state["token"]
+                )
+                if profile.has_configuration_phase:
+                    self.assertEqual(steps["login_ack"], _varint(0x03))
+                    self.assertEqual(steps["finish_ack"], _varint(profile.config_finish_ack_out))
+                    self.assertEqual(
+                        steps["config_keepalive"],
+                        _varint(profile.config_keep_alive_out) + struct.pack(">q", 42),
+                    )
+                    if profile.config_known_packs_in >= 0:
+                        self.assertEqual(
+                            steps["known_packs"], _varint(profile.config_known_packs_out) + _varint(0)
+                        )
+                self.assertIn("Play-State Disconnect", output)
+                if profile.play_chat_json_ids:
+                    self.assertIn("hello" if profile.text_is_json else "not decoded", output)
+
+    def test_login_start_formats_by_era(self) -> None:
+        formats = {p: PROFILES[p].login_start_format for p in (47, 340, 754, 758, 759, 760, 761, 763, 764, 767)}
+        self.assertEqual(
+            formats,
+            {47: "name", 340: "name", 754: "name", 758: "name", 759: "name_sig", 760: "name_sig_uuid",
+             761: "name_uuid_opt", 763: "name_uuid_opt", 764: "name_uuid", 767: "name_uuid"},
+        )
+
+    def test_known_keep_alive_ids(self) -> None:
+        # (protocol, clientbound keep alive, serverbound keep alive) for widely used versions
+        expected = [
+            (47, 0x00, 0x00),    # 1.8
+            (340, 0x1F, 0x0B),   # 1.12.2
+            (754, 0x1F, 0x10),   # 1.16.5
+            (758, 0x21, 0x0F),   # 1.18.2
+            (762, 0x23, 0x12),   # 1.19.4
+            (763, 0x23, 0x12),   # 1.20.1
+            (765, 0x24, 0x15),   # 1.20.4
+            (767, 0x26, 0x18),   # 1.21.1
+        ]
+        for protocol, keep_in, keep_out in expected:
+            with self.subTest(protocol=protocol):
+                self.assertEqual(PROFILES[protocol].play_keep_alive_in, keep_in)
+                self.assertEqual(PROFILES[protocol].play_keep_alive_out, keep_out)
+
+    def test_configuration_phase_starts_at_764_and_known_packs_at_766(self) -> None:
+        for protocol, profile in PROFILES.items():
+            self.assertEqual(profile.has_configuration_phase, protocol >= 764, protocol)
+            self.assertEqual(profile.config_known_packs_in >= 0, protocol >= 766, protocol)
+
 
 
 class TestCliValidation(unittest.TestCase):
