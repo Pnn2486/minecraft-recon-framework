@@ -29,6 +29,7 @@ from recon.exceptions import (
     ReconError,
 )
 from recon.protocols.ghost import headless_ghost_stream
+from recon.protocols.ghost_profiles import UnsupportedProtocolError
 from recon.protocols.ping import mc_status_ping
 from recon.protocols.query import gamespy4_full_query
 from recon.protocols.rcon import RCONClient, rcon_command
@@ -210,24 +211,60 @@ def _rcon_handler(conn: socket.socket) -> None:
             conn.sendall(struct.pack("<iii", 10 + len(reply), request_id, 0) + reply + b"\x00\x00")
 
 
+def _read_compressed_packet(conn: socket.socket) -> bytes:
+    """Reads one client frame after Set Compression (threshold 256, small packets only)."""
+    frame = _recv_exact(conn, _read_varint(conn))
+    assert frame[0] == 0, "expected uncompressed body (data length 0)"
+    return frame[1:]
+
+
+def _compressed(payload: bytes) -> bytes:
+    return _frame(_varint(0) + payload)  # below threshold: data length 0
+
+
 def _ghost_handler_factory(state: dict):
+    """Fake 1.16.5 (protocol 754) server: no Configuration phase."""
     keep_alive_id = 123456789
 
     def handler(conn: socket.socket) -> None:
         _recv_exact(conn, _read_varint(conn))  # handshake
         state["login_len"] = len(_recv_exact(conn, _read_varint(conn)))  # login start
         conn.sendall(_frame(_varint(0x03) + _varint(256)))  # set compression, threshold 256
+        conn.sendall(_compressed(_varint(0x02) + b"\x00" * 20))  # login success
+        conn.sendall(_compressed(_varint(0x1F) + struct.pack(">q", keep_alive_id)))
+        reply = _read_compressed_packet(conn)
+        state["echo_ok"] = reply == _varint(0x10) + struct.pack(">q", keep_alive_id)
+        conn.sendall(_compressed(_varint(0x0E) + _mc_string('{"text":"<Alice> hello"}')))
+        conn.sendall(_compressed(_varint(0x19) + _mc_string('{"text":"bye"}')))
 
-        def compressed(payload: bytes) -> bytes:
-            return _frame(_varint(0) + payload)  # below threshold: data length 0
+    return handler
 
-        conn.sendall(compressed(_varint(0x02) + b"\x00" * 20))  # login success
-        conn.sendall(compressed(_varint(0x1F) + struct.pack(">q", keep_alive_id)))
-        reply = _recv_exact(conn, _read_varint(conn))
-        state["echo_ok"] = reply[0] == 0 and reply[1:] == _varint(0x10) + struct.pack(">q", keep_alive_id)
-        conn.sendall(compressed(_varint(0x0E) + _mc_string('{"text":"<Alice> hello"}')))
-        conn.sendall(compressed(_varint(0x19) + _mc_string('{"text":"bye"}')))
 
+def _ghost_121_handler_factory(state: dict):
+    """Fake 1.21.1 (protocol 767) server: Login -> Configuration -> Play."""
+    keep_alive_id = 987654321
+    state["steps"] = []
+
+    def handler(conn: socket.socket) -> None:
+        _recv_exact(conn, _read_varint(conn))  # handshake
+        state["login_len"] = len(_recv_exact(conn, _read_varint(conn)))  # login start
+        conn.sendall(_frame(_varint(0x03) + _varint(256)))
+        conn.sendall(_compressed(_varint(0x02) + b"\x00" * 20 + _varint(0) + b"\x00"))  # login success
+
+        state["steps"].append(("login_ack", _read_compressed_packet(conn)))  # expects 0x03
+        conn.sendall(_compressed(_varint(0x04) + struct.pack(">q", 42)))  # config keep alive
+        state["steps"].append(("config_keepalive_echo", _read_compressed_packet(conn)))
+        conn.sendall(_compressed(_varint(0x0E) + _varint(0)))  # clientbound known packs (empty)
+        state["steps"].append(("known_packs_reply", _read_compressed_packet(conn)))
+        conn.sendall(_compressed(_varint(0x03)))  # finish configuration
+        state["steps"].append(("finish_ack", _read_compressed_packet(conn)))
+
+        conn.sendall(_compressed(_varint(0x26) + struct.pack(">q", keep_alive_id)))  # play keep alive
+        state["steps"].append(("play_keepalive_echo", _read_compressed_packet(conn)))
+        conn.sendall(_compressed(_varint(0x6C) + b"\x0a\x00"))  # system chat (opaque bytes)
+        conn.sendall(_compressed(_varint(0x1D) + b"\x0a\x00"))  # play disconnect
+
+    state["keep_alive_id"] = keep_alive_id
     return handler
 
 
@@ -297,10 +334,10 @@ class TestRcon(unittest.TestCase):
 
 
 class TestGhost(unittest.TestCase):
-    def _run_ghost(self, protocol_version: int) -> tuple[dict, str]:
+    def _run_ghost(self, protocol_version: int, handler_factory=_ghost_handler_factory) -> tuple[dict, str]:
         state: dict = {}
         captured = io.StringIO()
-        with TcpServer(_ghost_handler_factory(state)) as server:
+        with TcpServer(handler_factory(state)) as server:
             with contextlib.redirect_stdout(captured):
                 headless_ghost_stream(
                     HOST,
@@ -319,10 +356,26 @@ class TestGhost(unittest.TestCase):
         self.assertIn("Echoed Keep-Alive", output)
         self.assertIn("<Alice> hello", output)
 
-    def test_protocol_767_login_appends_uuid(self) -> None:
-        state, _ = self._run_ghost(767)
-        self.assertEqual(state["login_len"], 1 + 1 + len("AuditNode") + 16)
-        self.assertTrue(state["echo_ok"])
+    def test_protocol_767_full_login_configuration_play_flow(self) -> None:
+        state, output = self._run_ghost(767, _ghost_121_handler_factory)
+        self.assertEqual(state["login_len"], 1 + 1 + len("AuditNode") + 16)  # name + UUID
+        steps = dict(state["steps"])
+        self.assertEqual(steps["login_ack"], _varint(0x03))
+        self.assertEqual(steps["config_keepalive_echo"], _varint(0x04) + struct.pack(">q", 42))
+        self.assertEqual(steps["known_packs_reply"], _varint(0x07) + _varint(0))
+        self.assertEqual(steps["finish_ack"], _varint(0x03))
+        self.assertEqual(
+            steps["play_keepalive_echo"], _varint(0x18) + struct.pack(">q", state["keep_alive_id"])
+        )
+        self.assertIn("Configuration finished", output)
+        self.assertIn("packet 0x6C", output)
+        self.assertIn("Play-State Disconnect (0x1D)", output)
+
+    def test_unsupported_protocol_is_rejected_before_connecting(self) -> None:
+        for version in (758, 760, 763, 764, 765, 766, 768, 0):
+            with self.subTest(version=version):
+                with self.assertRaises(UnsupportedProtocolError):
+                    headless_ghost_stream(HOST, port=_unused_port(), protocol_version=version, duration=1)
 
     def test_online_mode_server_raises(self) -> None:
         with TcpServer(_online_mode_handler) as server:
