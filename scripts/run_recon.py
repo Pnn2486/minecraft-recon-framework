@@ -23,6 +23,7 @@ from recon.exceptions import ReconError
 from recon.protocols.ping import mc_status_ping
 from recon.protocols.query import gamespy4_full_query
 from recon.protocols.rcon import rcon_command
+from recon.utils.versions import version_range
 
 
 def _env_port(name: str, default: int) -> int:
@@ -57,7 +58,10 @@ def run_sequential_audit() -> int:
         ping_data = mc_status_ping(TARGET_HOST, TARGET_PORT, timeout=5.0, measure_latency=True)
         version_info = ping_data.get("version", {})
         players_info = ping_data.get("players", {})
-        print(f"  [+] Version      : {version_info.get('name')} (Protocol {version_info.get('protocol')})")
+        protocol = version_info.get("protocol")
+        known = version_range(protocol) if isinstance(protocol, int) else None
+        readable = f", Minecraft {known}" if known else ""
+        print(f"  [+] Version      : {version_info.get('name')} (Protocol {protocol}{readable})")
         print(f"  [+] Players      : {players_info.get('online')}/{players_info.get('max')}")
         print(f"  [+] RTT Latency  : {ping_data.get('latency_ms')} ms")
         succeeded += 1
