@@ -7,7 +7,8 @@
 1. **TCP server list ping (`0x00` status + `0x01` latency probe):** Unauthenticated descriptor extraction (MOTD, protocol version integer, server brand, favicon payload, sample player UUIDs) paired with a 64-bit big-endian timestamp echo for true Round-Trip Time (`latency_ms`) measurement.
 2. **UDP GameSpy4 full stat query (`0xFEFD`):** Stateless two-phase challenge-response handshake extracting uncapped online player arrays, server engine identifiers, active plugin matrices, and world map topology.
 3. **TCP Source RCON (`0x03` / `0x02`):** Authenticated 32-bit signed little-endian administrative tunnel (`RCONClient`) for remote command execution, tick-rate (`TPS`, Paper/Spigot servers only) auditing, and memory profiling.
-4. **TCP play-state headless client (`0x02` login -> play):** Stateful virtual client supporting offline UUID v3 generation, dynamic RFC 1950 `zlib` frame compression (`0x03`), automated 64-bit `Keep-Alive` heartbeat echoing, and chat packet reporting. Packet IDs are per-version (`0x1F` -> `0x10` and `0x0E` are the 1.16.5 values); only Minecraft 1.16.5 and 1.21 - 1.21.1 are supported, see [Section 7](#7-known-limitations--test-status).
+4. **TCP play-state headless client (`0x02` login -> play):** Stateful virtual client supporting offline UUID v3 generation, dynamic RFC 1950 `zlib` frame compression (`0x03`), the Configuration phase added in Minecraft 1.20.2, Keep-Alive heartbeat echoing, and chat packet reporting. It supports 46 protocol versions from Minecraft 1.8 to 26.1 and detects the server's version automatically; see the compatibility table in [section 3.4](#34-protocol-4-offline-play-state-headless-client-sourcereconprotocolsghostpy) and the [known limitations](#7-known-limitations--test-status).
+
 >[!WARNING]
 > Not affiliated with, endorsed by, or approved by Mojang or Microsoft. Minecraft is a trademark of Mojang.
 
@@ -24,12 +25,14 @@
     - `exceptions.py` - structured exception hierarchy (`ReconError`, etc.)
     - **utils**
       - `varint.py` - Base-128 VarInt, `recv_exact` & UUID v3 generators
+      - `versions.py` - protocol number <-> Minecraft version name lookup
     - **protocols**
       - `ping.py` - TCP `0x00` Status + `0x01` RTT latency
       - `query.py` - UDP `0xFEFD` GameSpy4 challenge/response
       - `rcon.py` - TCP little-endian Source RCON client
       - `ghost.py` - TCP play-state client (zlib, Configuration phase, Keep-Alive, chat)
-      - `ghost_profiles.py` - per-version packet ID tables for `ghost.py`
+      - `ghost_profiles.py` - per-version profile logic for `ghost.py`
+      - `ghost_profile_data.py` - packet ID table, one row per protocol number
 - **.github**
   - **workflows**
     - `ci.yml` - matrix CI on Linux & macOS, Python 3.10-3.12
@@ -42,7 +45,7 @@
 - **tests**
   - `test_varint.py` - unit tests for serialization & framing
   - `test_protocols.py` - loopback tests for ping, query, RCON, ghost and CLI validation
-    
+
 - `pyproject.toml` - build spec & CLI entry point
 - `Containerfile` - Docker / Podman container spec
 - `README.md` - this file
@@ -52,7 +55,7 @@
 - `LICENSE` - Authorized Use License
 - `.editorconfig`, `.gitattributes`, `.gitignore` - other necessary files
 
-- - -
+---
 
 ## 2. System, hardware & network requirements
 
@@ -66,7 +69,7 @@ Because `minecraft-recon-framework` operates directly on raw POSIX/Winsock netwo
 | **System memory (RAM)** | `128 MB` free RAM (`~20-40 MB` active CPython `3.10+` resident set size, plus headroom) | `1 GB - 2 GB` RAM | `ghost.py` processes `zlib` buffers in-memory; `1 GB+` prevents OOM kills when running inside Docker/Podman containers or parallel cron jobs. |
 | **GPU / compute threads** | **0 GPU threads (none / headless)** | **0 GPU threads (none / headless)** | Unlike the official Minecraft client, this framework bypasses LWJGL, OpenGL, and Vulkan entirely. It runs natively on headless Linux servers, SSH terminals, and cloud VMs without a GPU or display server (`X11`/`Wayland`). |
 | **Disk storage** | `200 MB` free disk space (includes a Python `3.10+` install if you don't already have one) | `1 GB` free disk space (if building OCI/Docker images or keeping logs) | Pure-Python source tree is `< 100 KB`; the interpreter is the main cost. Extra space is only required if storing JSON audit logs or Alpine Linux container layers. |
-| **Network interface** | `5 Mbps` IPv4/IPv6 NIC | `100 Mbps+` low-jitter Ethernet / VPC interface | Play-state `ghost` mode receives continuous chunk, entity, and chat packets from active servers (`~50-250 KB/s`, up to `~2 Mbps`, per session); `ping`, `query` and `rcon` use only a few KB per run. |
+| **Network interface** | `5 Mbps` IPv4/IPv6 NIC | `100 Mbps+` low-jitter Ethernet / VPC interface | Play-state `ghost` mode receives continuous chunk, entity, and chat packets from active servers (roughly `50-250 KB/s`, occasionally up to `~2 Mbps`, per session; an estimate, not a measurement); `ping`, `query` and `rcon` use only a few KB per run. |
 | **Network reliability** | Round-trip time `< 500 ms` to target, packet loss `< 5%`, working DNS resolution | Round-trip time `< 100 ms`, packet loss `< 1%` | The default socket timeout is `5.0 s`; unacknowledged UDP `query` datagrams and long-running `ghost` sessions fail on unstable or heavily lossy links. |
 
 ### 2.2 Supported operating systems
@@ -86,7 +89,7 @@ Because `minecraft-recon-framework` operates directly on raw POSIX/Winsock netwo
 ### 2.3 Software & runtime prerequisites
 
 * **Python interpreter:** CPython `>= 3.10` (`3.11` or `3.12` recommended for optimal `socket` and `struct` performance). Python `3.9` and older are not supported.
-* **Standard library modules (pre-installed with Python):** `socket`, `struct`, `zlib`, `hashlib`, `json`, `argparse`, `time`, `unittest`.
+* **Standard library modules (pre-installed with Python), including:** `socket`, `struct`, `zlib`, `hashlib`, `json`, `argparse`, `dataclasses`, `time`, `unittest`.
 * **External `pip` packages required:** **None (`0`)**.
 * **Optional tooling:**
   * `git` (for cloning and version control).
@@ -117,6 +120,8 @@ Every modern Minecraft TCP packet is prefixed with a Base-128 `VarInt` specifyin
 | **4. Latency ping** | Client -> Server | `0x01` | `int64_be(Unix Epoch Milliseconds)` (`>q`) |
 | **5. Latency pong** | Server -> Client | `0x01` | Echoed `int64_be` payload used to compute `latency_ms` |
 
+The CLI adds one readable field to the server's reply, `version.minecraft_versions` (for example `"1.21 - 1.21.1"`), so the protocol number does not have to be looked up by hand.
+
 ---
 
 ### 3.2 Protocol 2: UDP GameSpy4 full stat query (`source/recon/protocols/query.py`)
@@ -132,7 +137,7 @@ GameSpy4 runs over unconnected UDP datagrams (`SOCK_DGRAM`) and enforces a state
 4. **Full stat response (`Server -> Client`):**
    * **Header (`16 bytes`):** `\x00` + `SessionID (4B)` + `b"splitnum\x00\x80\x00"`.
    * **K/V metadata:** Null-delimited (`\x00`) alternating key/value strings.
-   * **Binary boundary (`10 bytes`):** `b"\x00\x00\x01player_\x00\x00"`.
+   * **Binary boundary (`12 bytes`):** `b"\x00\x00\x01player_\x00\x00"`.
    * **Player array:** Null-delimited (`\x00`) online usernames terminated by `\x00\x00`.
 
 ---
@@ -153,24 +158,41 @@ Valve Source RCON frames integers in **32-bit signed little-endian** (`<i`) byte
 
 ### 3.4 Protocol 4: offline play-state headless client (`source/recon/protocols/ghost.py`)
 
-1. **Login handshake:** Transmits `Handshake (0x00)` with `Next State = 2`, followed by `Login Start (0x00)`. For `protocol_version >= 764` (Minecraft 1.20.2+), `ghost.py` automatically appends a 16-byte MD5 UUID v3 (`OfflinePlayer:<username>`).
+1. **Login handshake:** Transmits `Handshake (0x00)` with `Next State = 2`, followed by `Login Start (0x00)`. The bytes after the username depend on the version. For `protocol_version >= 764` (Minecraft 1.20.2+), `ghost.py` appends a 16-byte MD5 UUID v3 (`OfflinePlayer:<username>`). Versions 1.19 - 1.20.1 send "no signature / no UUID" flags instead.
 2. **Zlib compression negotiation (`0x03`):** When the server transmits `Set Compression (0x03)`, all subsequent frames switch to RFC 1950 `zlib` framing:
    ```text
    [VarInt: Frame Length] [VarInt: Uncompressed Data Length] [zlib.compress(Packet ID + Payload)]
    ```
 3. **Configuration phase (1.20.2+ only):** After `Login Success (0x02)`, the client sends `Login Acknowledged`, answers the server's Known Packs with an empty list, echoes Keep-Alive and Ping, and acknowledges `Finish Configuration` before entering Play.
-4. **Play-state heartbeat loop:** Echoes 64-bit big-endian Keep-Alive IDs (`>q`) to maintain socket persistence and reports incoming chat packets. Packet IDs come from the profile for the selected `--protocol-version`.
+4. **Play-state heartbeat loop:** Echoes the server's Keep-Alive token back unchanged (a VarInt before 1.12.2, a 64-bit integer from 1.12.2 on) to maintain socket persistence and reports incoming chat packets. Packet IDs come from the profile for the selected `--protocol-version`.
 
 >[!NOTE]
-> **Compatibility:** Packet IDs change in almost every Minecraft release, so `ghost` mode only runs versions that have a profile in `ghost_profiles.py`. Any other `--protocol-version` is rejected before connecting.
+> **Compatibility:** Packet IDs change in almost every Minecraft release, so `ghost` mode only runs versions that have a row in `ghost_profile_data.py`. Any other protocol number is rejected before the login connection is made. Protocol numbers are listed on the [Minecraft wiki](https://minecraft.wiki/w/Protocol_version).
 >
-> | Protocol | Minecraft | Status |
+> **Choosing a version:** by default (`--protocol-version auto`) the client sends a normal status ping first, reads the protocol number the server reports, shows it as a Minecraft version (for example `Minecraft 1.16.4 - 1.16.5 (protocol 754)`) and uses the matching profile. To skip detection, pass either a Minecraft version (`--protocol-version 1.16.5`) or a protocol number (`--protocol-version 754`), for example when a proxy or multi-version plugin reports a different number than the server behind it. Run `recon --list-versions` to print the full table.
+>
+> | Minecraft | Supported protocol numbers | Notes |
 > | :--- | :--- | :--- |
-> | `754` | 1.16.5 | Implemented, tested against a local mock server only |
-> | `767` | 1.21 - 1.21.1 | Implemented from the published protocol tables (includes Configuration phase), tested against a local mock server only |
-> | all others | 1.17 - 1.20.6, 1.21.2+ | **Not supported** (no packet table yet) |
+> | 1.8 | `47` (1.8 - 1.8.9) |  |
+> | 1.9 | `107` (1.9), `109` (1.9.2), `110` (1.9.3 - 1.9.4) |  |
+> | 1.10 | `210` (1.10 - 1.10.2) |  |
+> | 1.11 | `315` (1.11), `316` (1.11.1 - 1.11.2) |  |
+> | 1.12 | `335` (1.12), `338` (1.12.1), `340` (1.12.2) |  |
+> | 1.13 | `393` (1.13), `401` (1.13.1), `404` (1.13.2) |  |
+> | 1.14 | `477` (1.14), `480` (1.14.1), `490` (1.14.3), `498` (1.14.4) |  |
+> | 1.15 | `573` (1.15), `575` (1.15.1), `578` (1.15.2) |  |
+> | 1.16 | `735` (1.16), `736` (1.16.1), `751` (1.16.2), `753` (1.16.3), `754` (1.16.4 - 1.16.5) |  |
+> | 1.17 | `755` (1.17), `756` (1.17.1) |  |
+> | 1.18 | `757` (1.18 - 1.18.1), `758` (1.18.2) |  |
+> | 1.19 | `759` (1.19), `760` (1.19.1 - 1.19.2), `761` (1.19.3), `762` (1.19.4) | Login Start format changes at `759`, `760` and `761` |
+> | 1.20 | `763` (1.20 - 1.20.1), `764` (1.20.2), `765` (1.20.3 - 1.20.4), `766` (1.20.5 - 1.20.6) | `764` and newer add the Configuration phase; `766` and newer add Known Packs |
+> | 1.21 | `767` (1.21 - 1.21.1), `768` (1.21.2 - 1.21.3), `769` (1.21.4), `770` (1.21.5), `771` (1.21.6), `772` (1.21.7 - 1.21.8), `773` (1.21.9 - 1.21.10), `774` (1.21.11) | Known Packs in the Configuration phase |
+> | 26.1 | `775` (26.1 - 26.1.2) |  |
+> | anything else | 1.7.x, 1.9.1, 1.14.2, 26.2, 26.3, snapshots | **Not supported** (the version names are known, but there is no packet data yet) |
 >
-> Neither supported version has been run against a real Minecraft server by the authors. Chat on `767` is reported as a packet size only, because signed chat and NBT text are not decoded.
+> The tables come from the community-maintained [`minecraft-data`](https://github.com/PrismarineJS/minecraft-data) project. Every profile passes a full login, configuration and play test against a fake local server, but **none has been run against a real Minecraft server by the authors**. Chat is shown as JSON text on 1.8 - 1.20.2; on newer versions and for signed player chat only the packet size is shown. Servers that force a resource pack or run anti-bot plugins may still kick the client.
+>
+> **Adding a version:** append one row to `source/recon/protocols/ghost_profile_data.py` (the layout is explained at the top of that file) and add the version to the tests. No other file needs to change unless the new release alters the login sequence itself.
 
 ---
 
@@ -192,7 +214,8 @@ python3 tools/packet_inspector.py --self-test
 python3 -m recon.cli --host 127.0.0.1 --port 25565 --mode ping
 python3 -m recon.cli --host 127.0.0.1 --port 25565 --mode query
 python3 -m recon.cli --host 127.0.0.1 --rcon-port 25575 --password "rcon_secret" --cmd "list" --mode rcon
-python3 -m recon.cli --host 127.0.0.1 --port 25565 --username "AuditNode" --duration 60 --mode ghost
+python3 -m recon.cli --host 127.0.0.1 --port 25565 --username "AuditNode" --duration 60 --mode ghost   # version is detected automatically
+# python3 -m recon.cli --host 127.0.0.1 --protocol-version 1.21.1 --mode ghost   # or force one
 ```
 
 #### Option B — editable package installation (`pyproject.toml`)
@@ -219,7 +242,8 @@ python3 tools/packet_inspector.py
 python3 -m recon.cli --host 127.0.0.1 --port 25565 --mode ping
 python3 -m recon.cli --host 127.0.0.1 --port 25565 --mode query
 python3 -m recon.cli --host 127.0.0.1 --rcon-port 25575 --password "rcon_secret" --cmd "list" --mode rcon
-python3 -m recon.cli --host 127.0.0.1 --port 25565 --username "AuditNode" --duration 60 --mode ghost
+python3 -m recon.cli --host 127.0.0.1 --port 25565 --username "AuditNode" --duration 60 --mode ghost   # version is detected automatically
+# python3 -m recon.cli --host 127.0.0.1 --protocol-version 1.21.1 --mode ghost   # or force one
 ```
 
 ---
@@ -243,6 +267,25 @@ $env:PYTHONPATH="source"
 python -m unittest discover -s tests -v
 python -m recon.cli --host 127.0.0.1 --port 25565 --mode ping
 ```
+
+---
+
+### 4.5 Automated audit script (`scripts/run_recon.py`)
+
+Runs ping, query and (if a password is given) RCON against one host and prints a summary. It is configured through environment variables:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `MC_TARGET_HOST` | `127.0.0.1` | Target host |
+| `MC_TARGET_PORT` | `25565` | Game port for ping and query |
+| `MC_RCON_PORT` | `25575` | RCON port |
+| `MC_RCON_PASSWORD` | *(unset)* | RCON password; the RCON step is skipped when it is not set |
+
+```bash
+PYTHONPATH=source MC_TARGET_HOST=127.0.0.1 python3 scripts/run_recon.py
+```
+
+Exit code `0` means at least one attempted probe succeeded, `1` means every attempted probe failed, and `2` means an invalid port in the environment.
 
 ---
 
@@ -270,6 +313,10 @@ try:
         print(rcon.execute("list"))
         print(rcon.execute("tps"))  # Paper/Spigot only; vanilla servers have no tps command
 
+    # 4. Offline-mode play-state client (version detected automatically;
+    #    pass protocol_version=767 to force one)
+    headless_ghost_stream("127.0.0.1", port=25565, duration=10)
+
 except ReconError as err:
     print(f"Audit exception: {err}")
 ```
@@ -280,7 +327,7 @@ except ReconError as err:
 
 | Flag | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `--host` | `str` | *Required* | Target IPv4 address or FQDN |
+| `--host` | `str` | *Required* | Target hostname or IP address (`query` mode is IPv4 only) |
 | `--mode` | `str` | *Required* | Protocol state machine: `ping`, `query`, `rcon`, `ghost` |
 | `--port` | `int` | `25565` | Target TCP/UDP game port (`ping`, `query`, `ghost`) |
 | `--rcon-port` | `int` | `25575` | Target TCP RCON port (`rcon` mode) |
@@ -288,12 +335,13 @@ except ReconError as err:
 | `--password` | `str` | `""` | RCON authentication secret (required for `--mode rcon`) |
 | `--cmd` | `str` | `"list"` | Server console command payload for RCON execution |
 | `--username` | `str` | `"AuditNode"` | `Login Start (0x00)` username for `ghost` mode |
-| `--protocol-version` | `int` | `754` | Protocol version integer for `ghost` mode (`754` = 1.16.5, `767` = 1.21 / 1.21.1; others are rejected) |
+| `--protocol-version` | `str` | `auto` | Version for `ghost` mode: a Minecraft version (`1.16.5`), a protocol number (`754`), or `auto` to detect it from the server with a status ping. Versions without a profile are rejected (see section 3.4) |
+| `--list-versions` | `flag` | `False` | Print every known Minecraft version with its protocol number and whether ghost mode supports it, then exit |
 | `--duration` | `int` | `30` | Socket read-loop TTL in seconds for `ghost` mode |
 | `--quiet` | `flag` | `False` | Suppress compliance banner on `stderr` for clean JSON piping |
 
 * **Exit code `0`:** Handshake and payload deserialization succeeded.
-* **Exit code `1`:** `ReconError`, `ProtocolFramingError`, `AuthenticationError`, or socket timeout.
+* **Exit code `1`:** `ReconError`, `ProtocolFramingError`, `AuthenticationError`, `UnsupportedProtocolError` (ghost mode), or socket timeout.
 * **Exit code `2`:** Invalid or missing mandatory CLI flag, or a value out of range (for example a port outside 1-65535, or a timeout of 0 or less).
 * **Exit code `130`:** Operator `SIGINT` (`Ctrl+C`) termination.
 
@@ -316,15 +364,16 @@ Please read this before relying on the tool.
 | `ping` | Version independent. | Expected to work on any Java Edition server. |
 | `query` | Version independent. Needs `enable-query=true` in `server.properties` and an open UDP port. | Expected to work on any server that has query enabled. |
 | `rcon` | Version independent. Needs `enable-rcon=true` and an RCON password. | Expected to work on any server that has RCON enabled. |
-| `ghost` | **Version specific**, because packet IDs change between releases. | Only `754` (1.16.5) and `767` (1.21 - 1.21.1). Every other `--protocol-version` is rejected before connecting. |
+| `ghost` | **Version specific**, because packet IDs change between releases. | Protocols `47` (1.8) to `775` (26.1), 46 in total (see section 3.4). Every other `--protocol-version` is rejected before connecting. |
 
 ### 7.3 Known limitations of `ghost` mode
 
 * **Offline-mode servers only.** The target must have `online-mode=false`. Servers that require Mojang authentication reply with an Encryption Request, and the client stops with `OnlineModeRequiredError`. It does not implement encryption or authentication.
-* **Unsupported versions:** Minecraft 1.17 - 1.20.6 and 1.21.2 or newer have no packet table yet. Supporting one means adding a verified entry to `source/recon/protocols/ghost_profiles.py`.
-* **Chat on 1.21 / 1.21.1 is not decoded.** Signed player chat and NBT text components are reported as a packet ID and size only. Chat on 1.16.5 is shown as raw JSON text.
+* **Unsupported versions:** Minecraft 1.7.x (protocols `4` and `5`), 1.9.1, 1.14.2, 26.2, 26.3 and all snapshots have no packet table, although their names are known (`recon --list-versions` marks them). Supporting one means adding a row to `source/recon/protocols/ghost_profile_data.py`.
+* **Chat is only partly decoded.** On 1.8 - 1.20.2 plain chat is shown as raw JSON text. Signed player chat and the NBT text used from 1.20.3 on are reported as a packet ID and size only.
 * **Passive behavior.** The client echoes Keep-Alive and Ping packets and ignores world data. It does not move, send chat, or load chunks. Servers with anti-bot plugins, whitelists, or proxies (BungeeCord, Velocity) may kick it.
-* **Listening window.** Sessions end after `--duration` seconds, or earlier if the server sends nothing for the socket timeout.
+* **Listening window.** Sessions end after `--duration` seconds. If the server sends nothing for longer than `--timeout`, the session stops with a timeout error (exit code `1`).
+* **Automatic detection can be wrong behind proxies.** Proxies and multi-version plugins may report a different protocol number than the server behind them. If login fails, pass `--protocol-version` explicitly.
 
 ### 7.4 Other limitations
 
