@@ -8,7 +8,9 @@ from recon.exceptions import ReconError
 from recon.protocols.ping import mc_status_ping
 from recon.protocols.query import gamespy4_full_query
 from recon.protocols.rcon import rcon_command
-from recon.protocols.ghost import headless_ghost_stream
+from recon.protocols.ghost import AUTO_PROTOCOL, headless_ghost_stream
+from recon.protocols.ghost_profiles import PROFILES
+from recon.utils.versions import VERSION_NAMES, protocol_for_name, version_range
 
 VERSION = "1.1.0"
 
@@ -48,6 +50,38 @@ def non_negative_int(text: str) -> int:
     return value
 
 
+def protocol_choice(text: str) -> int | str:
+    """A protocol number, a Minecraft version such as 1.16.5, or the word "auto"."""
+    text = text.strip()
+    if text.lower() == AUTO_PROTOCOL:
+        return AUTO_PROTOCOL
+    if text.isdigit():
+        return int(text)
+    protocol = protocol_for_name(text)
+    if protocol is not None:
+        return protocol
+    if text.startswith("-") and text[1:].isdigit():
+        raise argparse.ArgumentTypeError(f"{text} must not be negative")
+    raise argparse.ArgumentTypeError(
+        f"unknown version {text!r}: use a protocol number, a Minecraft version such as 1.16.5, "
+        "or auto (see --list-versions)"
+    )
+
+
+class _ListVersions(argparse.Action):
+    """Prints every known Minecraft release with its protocol number and ghost-mode support, then exits."""
+
+    def __init__(self, option_strings, dest, **kwargs):
+        super().__init__(option_strings, dest, nargs=0, default=argparse.SUPPRESS, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print(f"{'Minecraft':<20} {'Protocol':>8}  Ghost mode")
+        for protocol in sorted(VERSION_NAMES):
+            support = "supported" if protocol in PROFILES else "not supported"
+            print(f"{version_range(protocol):<20} {protocol:>8}  {support}")
+        parser.exit(0)
+
+
 def positive_seconds(text: str) -> float:
     try:
         value = float(text)
@@ -64,7 +98,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Zero-dependency Minecraft network reconnaissance and protocol auditing framework.",
     )
     parser.add_argument("--version", action="version", version=f"recon {VERSION}")
-    parser.add_argument("--host", required=True, help="Target IPv4 address or FQDN")
+    parser.add_argument("--list-versions", action=_ListVersions, help="List known Minecraft versions and their protocol numbers, then exit")
+    parser.add_argument("--host", required=True, help="Target hostname or IP address (query mode is IPv4 only)")
     parser.add_argument(
         "--mode",
         choices=["ping", "query", "rcon", "ghost"],
@@ -79,9 +114,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--username", default="AuditNode", help="Login Start (0x00) username for --mode ghost")
     parser.add_argument(
         "--protocol-version",
-        type=non_negative_int,
-        default=754,
-        help="Minecraft protocol version integer for --mode ghost (default: 754 / 1.16.5)",
+        type=protocol_choice,
+        default=AUTO_PROTOCOL,
+        help='Version for --mode ghost: a protocol number (754), a Minecraft version (1.16.5), or "auto" to detect it from the server (default: auto)',
     )
     parser.add_argument("--duration", type=positive_int, default=30, help="Session listen TTL in seconds for --mode ghost")
     parser.add_argument("--quiet", action="store_true", help="Suppress compliance banner for JSON piping")
@@ -103,6 +138,11 @@ def main(argv: list[str] | None = None) -> int:
                 timeout=args.timeout,
                 measure_latency=True,
             )
+            version = result.get("version")
+            if isinstance(version, dict) and isinstance(version.get("protocol"), int):
+                names = version_range(version["protocol"])
+                if names:
+                    version["minecraft_versions"] = names  # readable form of the protocol number
             print(json.dumps(result, indent=2))
 
         elif args.mode == "query":
