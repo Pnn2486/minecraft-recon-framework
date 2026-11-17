@@ -30,6 +30,7 @@ from recon.exceptions import (
 )
 from recon.protocols.ghost import headless_ghost_stream
 from recon.protocols.ghost_profiles import PROFILES, GhostProfile, UnsupportedProtocolError
+from recon.utils.versions import VERSION_NAMES, describe, protocol_for_name, version_range
 from recon.protocols.ping import mc_status_ping
 from recon.protocols.query import gamespy4_full_query
 from recon.protocols.rcon import RCONClient, rcon_command
@@ -189,6 +190,28 @@ def _status_handler(conn: socket.socket) -> None:
     ping = _recv_exact(conn, _read_varint(conn))
     if ping[0] == 0x01:
         conn.sendall(_frame(ping))
+
+
+def _status_reply(conn: socket.socket, descriptor: dict) -> None:
+    """Answers one status request (after the handshake has been read)."""
+    _recv_exact(conn, _read_varint(conn))  # status request
+    conn.sendall(_frame(_varint(0x00) + _mc_string(json.dumps(descriptor))))
+
+
+def _parse_handshake(frame: bytes) -> tuple[int, int]:
+    """Returns (protocol number, next state) from a Handshake packet body."""
+    pos = 1  # packet id 0x00
+    protocol = shift = 0
+    while True:
+        byte = frame[pos]
+        pos += 1
+        protocol |= (byte & 0x7F) << shift
+        shift += 7
+        if not byte & 0x80:
+            break
+    host_len = frame[pos]
+    pos += 1 + host_len + 2  # host string (short) + port
+    return protocol, frame[pos]
 
 
 def _bad_json_status_handler(conn: socket.socket) -> None:
@@ -380,7 +403,7 @@ class TestGhost(unittest.TestCase):
     def test_online_mode_server_raises(self) -> None:
         with TcpServer(_online_mode_handler) as server:
             with self.assertRaises(OnlineModeRequiredError):
-                headless_ghost_stream(HOST, port=server.port, duration=5, timeout=5.0)
+                headless_ghost_stream(HOST, port=server.port, protocol_version=754, duration=5, timeout=5.0)
 
 
 def _expected_login_start(profile: GhostProfile, username: str) -> bytes:
@@ -406,6 +429,9 @@ def _profile_handler_factory(profile: GhostProfile, state: dict):
 
     def handler(conn: socket.socket) -> None:
         _recv_exact(conn, _read_varint(conn))  # handshake
+        session(conn)
+
+    def session(conn: socket.socket) -> None:
         login = _recv_exact(conn, _read_varint(conn))
         state["login"] = login
         conn.sendall(_frame(_varint(0x03) + _varint(256)))
@@ -428,6 +454,22 @@ def _profile_handler_factory(profile: GhostProfile, state: dict):
         for chat_id in sorted(profile.play_chat_opaque_ids):
             conn.sendall(_compressed(_varint(chat_id) + b"\x0a\x00\x00"))
         conn.sendall(_compressed(_varint(profile.play_disconnect) + _mc_string('{"text":"bye"}')))
+
+    handler.session = session  # type: ignore[attr-defined]
+    return handler
+
+
+def _auto_server_handler_factory(profile: GhostProfile, state: dict, reported_protocol: int, reported_name: str):
+    """Fake server that answers a status ping first and then a login on the same port."""
+    login_session = _profile_handler_factory(profile, state).session  # type: ignore[attr-defined]
+
+    def handler(conn: socket.socket) -> None:
+        handshake = _recv_exact(conn, _read_varint(conn))
+        _, next_state = _parse_handshake(handshake)
+        if next_state == 1:
+            _status_reply(conn, {"version": {"name": reported_name, "protocol": reported_protocol}})
+        else:
+            login_session(conn)
 
     return handler
 
@@ -504,6 +546,128 @@ class TestGhostAllProfiles(unittest.TestCase):
 
 
 
+class TestGhostAutoDetect(unittest.TestCase):
+    """`--protocol-version auto`: ping first, then log in with the detected version."""
+
+    def _run_auto(self, protocol: int, reported_protocol: int | None = None) -> tuple[dict, str]:
+        profile = PROFILES[protocol]
+        state: dict = {}
+        captured = io.StringIO()
+        handler = _auto_server_handler_factory(
+            profile, state, reported_protocol if reported_protocol is not None else protocol, f"Mock {profile.name}"
+        )
+        with TcpServer(handler) as server:
+            with contextlib.redirect_stdout(captured):
+                headless_ghost_stream(HOST, port=server.port, duration=5, timeout=5.0)  # default is auto
+        return state, captured.getvalue()
+
+    def test_auto_is_the_default_and_picks_the_reported_profile(self) -> None:
+        for protocol in (47, 340, 754, 759, 763, 765, 767, 775):
+            with self.subTest(protocol=protocol):
+                state, output = self._run_auto(protocol)
+                self.assertIn(f"protocol {protocol})", output)
+                self.assertIn("Detected server version", output)
+                self.assertIn("Play-State Disconnect", output)
+                expected_prefix = _varint(0x00) + _expected_login_start(PROFILES[protocol], "AuditNode")
+                self.assertTrue(state["login"].startswith(expected_prefix))
+
+    def test_unsupported_detected_version_is_reported_clearly(self) -> None:
+        state: dict = {}
+        handler = _auto_server_handler_factory(PROFILES[754], state, 600, "Mock future")
+        with TcpServer(handler) as server:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                with self.assertRaises(UnsupportedProtocolError) as ctx:
+                    headless_ghost_stream(HOST, port=server.port, duration=5, timeout=5.0)
+        self.assertIn("600", str(ctx.exception))
+        self.assertIn("Mock future", out.getvalue())
+        self.assertNotIn("login", state)  # never attempted a login
+
+    def test_status_without_protocol_number_raises_framing_error(self) -> None:
+        for descriptor in ({"description": "no version"}, {"version": {"name": "x", "protocol": "abc"}},
+                           {"version": {"name": "x", "protocol": True}}, {"version": {"name": "x", "protocol": -1}}):
+            with self.subTest(descriptor=descriptor):
+                def handler(conn: socket.socket, d=descriptor) -> None:
+                    _recv_exact(conn, _read_varint(conn))
+                    _status_reply(conn, d)
+
+                with TcpServer(handler) as server:
+                    with self.assertRaises(ProtocolFramingError):
+                        headless_ghost_stream(HOST, port=server.port, duration=5, timeout=5.0)
+
+    def test_explicit_number_skips_detection(self) -> None:
+        state: dict = {}
+        captured = io.StringIO()
+        with TcpServer(_profile_handler_factory(PROFILES[754], state)) as server:
+            with contextlib.redirect_stdout(captured):
+                headless_ghost_stream(HOST, port=server.port, protocol_version=754, duration=5, timeout=5.0)
+        self.assertNotIn("Detected", captured.getvalue())
+
+    def test_cli_defaults_to_auto(self) -> None:
+        state: dict = {}
+        handler = _auto_server_handler_factory(PROFILES[767], state, 767, "Mock 1.21.1")
+        stdout = io.StringIO()
+        with TcpServer(handler) as server:
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+                code = cli.main(["--quiet", "--host", HOST, "--mode", "ghost", "--port", str(server.port),
+                                 "--duration", "5", "--timeout", "5"])
+        self.assertEqual(code, 0)
+        self.assertIn("Detected server version: Minecraft 1.21 - 1.21.1 (protocol 767)", stdout.getvalue())
+        self.assertIn("Mock 1.21.1", stdout.getvalue())
+
+
+class TestVersionNames(unittest.TestCase):
+    """The protocol number <-> Minecraft version lookup."""
+
+    def test_known_conversions(self) -> None:
+        expected = {
+            47: "1.8 - 1.8.9", 340: "1.12.2", 754: "1.16.4 - 1.16.5", 763: "1.20 - 1.20.1",
+            767: "1.21 - 1.21.1", 5: "1.7.6 - 1.7.10",
+        }
+        for protocol, text in expected.items():
+            with self.subTest(protocol=protocol):
+                self.assertEqual(version_range(protocol), text)
+
+    def test_names_map_back_to_protocols(self) -> None:
+        for name, protocol in (("1.16.5", 754), ("1.8.9", 47), ("1.21.1", 767), ("1.7.10", 5), ("26.1", 775)):
+            with self.subTest(name=name):
+                self.assertEqual(protocol_for_name(name), protocol)
+        self.assertIsNone(protocol_for_name("1.99"))
+        self.assertIsNone(protocol_for_name("banana"))
+
+    def test_every_release_name_is_unique_and_round_trips(self) -> None:
+        seen: dict[str, int] = {}
+        for protocol, names in VERSION_NAMES.items():
+            for name in names:
+                self.assertNotIn(name, seen, f"{name} listed under two protocols")
+                seen[name] = protocol
+                self.assertEqual(protocol_for_name(name), protocol)
+
+    def test_every_supported_profile_has_a_readable_name(self) -> None:
+        for protocol, profile in PROFILES.items():
+            self.assertIsNotNone(version_range(protocol), protocol)
+            self.assertEqual(profile.name, version_range(protocol))
+
+    def test_unknown_number_is_described_not_crashing(self) -> None:
+        self.assertIn("unknown", describe(600))
+        self.assertIn("600", describe(600))
+
+
+class TestGhostVersionNamesInOutput(unittest.TestCase):
+    def test_unsupported_but_known_version_is_named_in_the_error(self) -> None:
+        state: dict = {}
+        handler = _auto_server_handler_factory(PROFILES[754], state, 5, "Old server")
+        with TcpServer(handler) as server:
+            with contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(UnsupportedProtocolError) as ctx:
+                    headless_ghost_stream(HOST, port=server.port, duration=5, timeout=5.0)
+        self.assertIn("1.7.6 - 1.7.10", str(ctx.exception))
+
+    def test_supported_list_in_the_error_uses_version_names(self) -> None:
+        with self.assertRaises(UnsupportedProtocolError) as ctx:
+            headless_ghost_stream(HOST, port=_unused_port(), protocol_version=600, duration=1)
+        self.assertIn("1.16.4 - 1.16.5 (754)", str(ctx.exception))
+
+
 class TestCliValidation(unittest.TestCase):
     BASE = ["--quiet", "--host", HOST, "--mode", "ping"]
 
@@ -523,6 +687,8 @@ class TestCliValidation(unittest.TestCase):
             ["--timeout", "0"],
             ["--timeout", "nan"],
             ["--duration", "0"],
+            ["--protocol-version", "foo"],
+            ["--protocol-version", "-3"],
         ]
         for extra in bad_values:
             with self.subTest(extra=extra):
@@ -539,6 +705,47 @@ class TestCliValidation(unittest.TestCase):
             code, output = self._run_cli(self.BASE + ["--port", str(server.port)])
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(output)["players"]["max"], 20)
+
+    def _run_cli_allow_exit(self, argv: list[str]) -> tuple[object, str]:
+        stdout = io.StringIO()
+        code: object = None
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                code = cli.main(argv)
+            except SystemExit as exc:
+                code = exc.code
+        return code, stdout.getvalue()
+
+    def test_list_versions_prints_the_table_and_exits_cleanly(self) -> None:
+        code, output = self._run_cli_allow_exit(["--list-versions"])
+        self.assertEqual(code, 0)
+        self.assertRegex(output, r"1\.16\.4 - 1\.16\.5\s+754\s+supported")
+        self.assertRegex(output, r"1\.7\.6 - 1\.7\.10\s+5\s+not supported")
+
+    def test_protocol_version_accepts_a_minecraft_version_name(self) -> None:
+        state: dict = {}
+        with TcpServer(_profile_handler_factory(PROFILES[754], state)) as server:
+            code, output = self._run_cli_allow_exit(
+                ["--quiet", "--host", HOST, "--mode", "ghost", "--port", str(server.port),
+                 "--protocol-version", "1.16.5", "--duration", "5", "--timeout", "5"]
+            )
+        self.assertEqual(code, 0)
+        self.assertNotIn("Detected", output)  # explicit version, no detection
+        self.assertTrue(state["login"].startswith(_varint(0x00)))
+
+    def test_unknown_version_name_exits_with_code_2(self) -> None:
+        for bad in ("1.99", "banana", ""):
+            with self.subTest(value=bad):
+                code, _ = self._run_cli_allow_exit(self.BASE + ["--protocol-version", bad])
+                self.assertEqual(code, 2)
+
+    def test_ping_output_includes_readable_version(self) -> None:
+        with TcpServer(_status_handler) as server:
+            code, output = self._run_cli(self.BASE + ["--port", str(server.port)])
+        self.assertEqual(code, 0)
+        version = json.loads(output)["version"]
+        self.assertEqual(version["protocol"], 767)
+        self.assertEqual(version["minecraft_versions"], "1.21 - 1.21.1")
 
 
 if __name__ == "__main__":
