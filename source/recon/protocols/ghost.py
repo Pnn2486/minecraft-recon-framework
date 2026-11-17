@@ -3,7 +3,7 @@ Protocol 4: Offline-Mode Play-State Headless Client.
 Supports dynamic Zlib compression (0x03), the 1.20.2+ Configuration phase,
 Keep-Alive heartbeat echoing, and chat packet reporting.
 
-Packet IDs are version specific and live in `recon.protocols.ghost_profiles`.
+Packet IDs are version specific. The table is `recon.protocols.ghost_profile_data` and the logic that uses it is `recon.protocols.ghost_profiles`. The protocol version can be given as a number or as "auto", which asks the server for it with a status ping first.
 """
 
 import socket
@@ -17,6 +17,8 @@ from recon.exceptions import (
     ReconError,
 )
 from recon.protocols.ghost_profiles import GhostProfile, get_profile
+from recon.protocols.ping import mc_status_ping
+from recon.utils.versions import describe
 from recon.utils.varint import (
     pack_varint,
     pack_string,
@@ -93,11 +95,32 @@ def _report_chat(profile: GhostProfile, pkt_id: int, data: bytes) -> None:
     print(f"[CHAT] packet 0x{pkt_id:02X} ({len(data)} bytes, not decoded)")
 
 
+AUTO_PROTOCOL = "auto"
+
+
+def detect_protocol_version(host: str, port: int = 25565, timeout: float = 5.0) -> tuple[int, str]:
+    """
+    Asks the server which protocol it speaks, using a plain status ping.
+    Returns (protocol number, version name as the server reports it).
+
+    Servers behind a proxy or a multi-version plugin may report a different number than
+    their backend; pass an explicit protocol number if detection picks the wrong one.
+    """
+    status = mc_status_ping(host, port, timeout=timeout, measure_latency=False)
+    version = status.get("version")
+    protocol = version.get("protocol") if isinstance(version, dict) else None
+    if not isinstance(protocol, int) or isinstance(protocol, bool) or protocol < 0:
+        raise ProtocolFramingError(
+            "The server status reply has no usable protocol number. Pass --protocol-version explicitly."
+        )
+    return protocol, str(version.get("name", "unknown"))
+
+
 def headless_ghost_stream(
     host: str,
     port: int = 25565,
     username: str = "AuditNode",
-    protocol_version: int = 754,
+    protocol_version: int | str = AUTO_PROTOCOL,
     duration: int = 30,
     timeout: float = 10.0,
 ) -> None:
@@ -106,8 +129,14 @@ def headless_ghost_stream(
     passes through the Configuration phase when the version has one, enters Play State,
     echoes Keep-Alive tokens, and reports chat packets.
 
-    Raises UnsupportedProtocolError (before connecting) when `protocol_version` has no profile.
+    `protocol_version` is a protocol number, or "auto" (the default) to detect it with a
+    status ping on the same host and port first.
+
+    Raises UnsupportedProtocolError (before the login connection) when the protocol has no profile.
     """
+    if protocol_version == AUTO_PROTOCOL:
+        protocol_version, server_name = detect_protocol_version(host, port, timeout)
+        print(f"[+] Detected server version: {describe(protocol_version)}; the server calls itself {server_name!r}")
     profile = get_profile(protocol_version)
     compression_threshold = -1
     state = "login"  # login -> (configuration ->) play
