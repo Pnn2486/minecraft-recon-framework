@@ -59,6 +59,18 @@ On Windows, use `python` instead of `python3`.
 4. Update `README.md` when behavior, flags, or requirements change.
 5. Open the pull request and describe what changed, why, and how you tested it, including the Python version and Minecraft server version you used.
 
+## Adding a Minecraft version (ghost mode)
+
+Packet IDs for the headless client live in one table, `source/recon/protocols/ghost_profile_data.py`.
+
+1. Append one row for the new protocol number. The layout is explained at the top of that file, and the numbers come from the [`minecraft-data`](https://github.com/PrismarineJS/minecraft-data) project (`data/pc/<version>/protocol.json`).
+2. Make sure the release name is in `source/recon/utils/versions.py`; that is the only place version names live, and the tests fail if a supported protocol has no name there.
+3. Add the version to the tests in `tests/test_protocols.py`. The every-profile test picks up new rows automatically, but add the version to the auto-detection test as well.
+4. Update the compatibility table in `README.md` (section 3.4) and the `supported_protocol_versions` list in `program_info/org.recon.Framework.json`.
+5. Only change `ghost.py` or `ghost_profiles.py` if the new release alters the login or configuration sequence itself.
+
+If you ran the version against a real server, say so in the pull request. Until then it is marked as untested.
+
 ## Reporting bugs
 
 Please include:
