@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from recon.exceptions import ReconError
 from recon.protocols.ghost_profile_data import ROWS
+from recon.utils.versions import describe, version_range
 
 
 class UnsupportedProtocolError(ReconError):
@@ -64,12 +65,12 @@ def _none_to_missing(value: int | None) -> int:
 
 
 def _build(row: tuple) -> GhostProfile:
-    (protocol, label, fmt, ka_in, ka_out, disconnect, json_ids, opaque_ids, text_json, cfg) = row
+    (protocol, fmt, ka_in, ka_out, disconnect, json_ids, opaque_ids, text_json, cfg) = row
     if fmt not in LOGIN_START_FORMATS:
         raise ValueError(f"unknown login start format {fmt!r} for protocol {protocol}")
     common = dict(
         protocol=protocol,
-        name=label,
+        name=version_range(protocol) or f"protocol {protocol}",
         login_start_format=fmt,
         play_keep_alive_in=ka_in,
         play_keep_alive_out=ka_out,
@@ -101,8 +102,8 @@ PROFILES: dict[int, GhostProfile] = {row[0]: _build(row) for row in ROWS}
 
 
 def supported_versions() -> str:
-    """Human-readable list such as '47 (1.8), 107 (1.9), ...'."""
-    return ", ".join(f"{num} ({p.name})" for num, p in sorted(PROFILES.items()))
+    """Human-readable list such as '1.8 - 1.8.9 (47), 1.9 (107), ...'."""
+    return ", ".join(f"{p.name} ({num})" for num, p in sorted(PROFILES.items()))
 
 
 def get_profile(protocol_version: int) -> GhostProfile:
@@ -111,5 +112,5 @@ def get_profile(protocol_version: int) -> GhostProfile:
         return PROFILES[protocol_version]
     except KeyError:
         raise UnsupportedProtocolError(
-            f"Ghost mode has no packet table for protocol {protocol_version}. Supported: {supported_versions()}."
+            f"Ghost mode has no packet table for {describe(protocol_version)}. Supported: {supported_versions()}."
         ) from None
