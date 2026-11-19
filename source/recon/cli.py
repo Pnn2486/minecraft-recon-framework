@@ -14,10 +14,8 @@ from recon.utils.versions import VERSION_NAMES, protocol_for_name, version_range
 
 VERSION = "1.1.0"
 
-COMPLIANCE_BANNER =     "========================================================================\n"
-    f"minecraft-recon-framework v{VERSION} | Authorized Diagnostic Use Only\n"
-    "The creator accepts no responsibility for any misuse of this software.\n"
-    "========================================================================"
+COMPLIANCE_BANNER = f"========================================================================\nminecraft-recon-framework v{VERSION} | Authorized Diagnostic Use Only\nThe creator accepts no responsibility for any misuse of this software.\n========================================================================"
+
 
 def _parse_int(text: str) -> int:
     try:
