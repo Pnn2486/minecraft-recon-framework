@@ -3,7 +3,9 @@ Protocol 4: Offline-Mode Play-State Headless Client.
 Supports dynamic Zlib compression (0x03), the 1.20.2+ Configuration phase,
 Keep-Alive heartbeat echoing, and chat packet reporting.
 
-Packet IDs are version specific. The table is `recon.protocols.ghost_profile_data` and the logic that uses it is `recon.protocols.ghost_profiles`. The protocol version can be given as a number or as "auto", which asks the server for it with a status ping first.
+Packet IDs are version specific. The table is `recon.protocols.ghost_profile_data`.
+The logic that uses it is `recon.protocols.ghost_profiles`.
+The protocol version can be given as a number or as "auto", which asks the server for it with a status ping first.
 """
 
 import socket
@@ -110,9 +112,7 @@ def detect_protocol_version(host: str, port: int = 25565, timeout: float = 5.0) 
     version = status.get("version")
     protocol = version.get("protocol") if isinstance(version, dict) else None
     if not isinstance(protocol, int) or isinstance(protocol, bool) or protocol < 0:
-        raise ProtocolFramingError(
-            "The server status reply has no usable protocol number. Pass --protocol-version explicitly."
-        )
+        raise ProtocolFramingError("The server status reply has no usable protocol number. Pass --protocol-version explicitly.")
     return protocol, str(version.get("name", "unknown"))
 
 
@@ -143,13 +143,7 @@ def headless_ghost_stream(
 
     try:
         with socket.create_connection((host, port), timeout=timeout) as sock:
-            handshake = (
-                pack_varint(0x00)
-                + pack_varint(protocol_version)
-                + pack_string(host)
-                + struct.pack(">H", port)
-                + pack_varint(2)
-            )
+            handshake = pack_varint(0x00) + pack_varint(protocol_version) + pack_string(host) + struct.pack(">H", port) + pack_varint(2)
             _send_framed_packet(sock, handshake, compression_threshold)
             _send_framed_packet(sock, _build_login_start_packet(username, profile), compression_threshold)
 
@@ -163,9 +157,7 @@ def headless_ghost_stream(
                         raise AuthenticationError(f"Login Disconnect (0x00): {reason}")
 
                     elif pkt_id == 0x01:
-                        raise OnlineModeRequiredError(
-                            "Server issued Encryption Request (0x01). Target has online-mode=true."
-                        )
+                        raise OnlineModeRequiredError("Server issued Encryption Request (0x01). Target has online-mode=true.")
 
                     elif pkt_id == 0x03:
                         compression_threshold, _ = read_varint_bytes(data, 0)
@@ -173,9 +165,7 @@ def headless_ghost_stream(
 
                     elif pkt_id == 0x02:
                         if profile.has_configuration_phase:
-                            _send_framed_packet(
-                                sock, pack_varint(profile.login_acknowledged_out), compression_threshold
-                            )
+                            _send_framed_packet(sock, pack_varint(profile.login_acknowledged_out), compression_threshold)
                             state = "configuration"
                             print(f"[+] Login Success (0x02): '{username}' entering Configuration phase.")
                         else:
@@ -188,32 +178,24 @@ def headless_ghost_stream(
                         break
 
                     elif pkt_id == profile.config_keep_alive_in and data:
-                        _send_framed_packet(
-                            sock, pack_varint(profile.config_keep_alive_out) + data, compression_threshold
-                        )
+                        _send_framed_packet(sock, pack_varint(profile.config_keep_alive_out) + data, compression_threshold)
                         print("[~] Echoed Keep-Alive (configuration)")
 
                     elif pkt_id == profile.config_ping_in and len(data) == 4:
-                        _send_framed_packet(
-                            sock, pack_varint(profile.config_pong_out) + data, compression_threshold
-                        )
+                        _send_framed_packet(sock, pack_varint(profile.config_pong_out) + data, compression_threshold)
 
                     elif pkt_id == profile.config_known_packs_in:
                         # Reply "no known packs" (empty array); the server waits for this reply.
-                        _send_framed_packet(
-                            sock, pack_varint(profile.config_known_packs_out) + pack_varint(0), compression_threshold
-                        )
+                        _send_framed_packet(sock, pack_varint(profile.config_known_packs_out) + pack_varint(0), compression_threshold)
 
                     elif pkt_id == profile.config_finish_in:
-                        _send_framed_packet(
-                            sock, pack_varint(profile.config_finish_ack_out), compression_threshold
-                        )
+                        _send_framed_packet(sock, pack_varint(profile.config_finish_ack_out), compression_threshold)
                         state = "play"
                         print(f"[+] Configuration finished: '{username}' entered Play State.")
 
                 else:
                     if pkt_id == profile.play_keep_alive_in and data:
-                        # The token is an int, VarInt or long depending on the version; echoing the raw bytes works for all.
+                        # The token is an int, VarInt or long depending on the version. Echoing the raw bytes works for all of them.
                         pong_frame = pack_varint(profile.play_keep_alive_out) + data
                         _send_framed_packet(sock, pong_frame, compression_threshold)
                         print(f"[~] Echoed Keep-Alive Heartbeat (0x{profile.play_keep_alive_out:02X}): {len(data)} bytes")
