@@ -5,7 +5,7 @@ Thank you for helping improve `minecraft-recon-framework`. We welcome pull reque
 ## Before you start
 
 - **Authorized use only.** This project exists for network protocol research, systems administration, and authorized security auditing. Read [COPYING.md](./COPYING.md) and [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) first. Contributions or issues that promote unauthorized intrusion, denial-of-service, or abuse of third-party infrastructure will be closed.
-- **Python 3.10 or newer.** Check your interpreter with `python3 --version`. The project supports CPython 3.10, 3.11, and 3.12.
+- **Python 3.10 or newer.** Check your interpreter with `python3 --version`. The project supports CPython 3.10 through 3.15.
 - **Larger changes:** open an issue first so we can agree on the approach before you write code.
 
 ## Engineering constraints
