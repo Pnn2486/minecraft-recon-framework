@@ -3,10 +3,9 @@ Packet ID table for the headless ghost client, one row per Minecraft protocol nu
 
 THIS FILE IS DATA ONLY. To support a new Minecraft release, append one row.
 
-Source: PrismarineJS `minecraft-data` project
-(https://github.com/PrismarineJS/minecraft-data, `data/pc/<version>/protocol.json`).
-The rows for 1.16.5 (754) and 1.21.1 (767) were also checked by hand against the
-published protocol documentation, and match.
+Source: PrismarineJS `minecraft-data`, file `data/pc/<version>/protocol.json`.
+https://github.com/PrismarineJS/minecraft-data
+The rows for 1.16.5 (754) and 1.21.1 (767) were also checked by hand against the published protocol documentation.
 
 Row layout:
     (protocol, login_start_format, keep_alive_in, keep_alive_out, play_disconnect,
@@ -24,6 +23,7 @@ Row layout:
                           ping_in, pong_out, known_packs_in, known_packs_out, login_acknowledged_out)
                          where known_packs_* is None for 1.20.2 - 1.20.4
 """
+
 
 ROWS = (
     (47, "name", 0x00, 0x00, 0x40, (0x02,), (), True, None),
