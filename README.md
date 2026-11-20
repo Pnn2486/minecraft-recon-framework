@@ -35,7 +35,7 @@
       - `ghost_profile_data.py` - packet ID table, one row per protocol number
 - **.github**
   - **workflows**
-    - `ci.yml` - matrix CI on Linux, macOS and Windows, Python 3.10-3.12
+    - `ci.yml` - matrix CI on Linux, macOS and Windows, Python 3.10-3.15
 - **program_info**
   - `org.recon.Framework.json` - protocol & port manifest
 - **scripts**
@@ -355,7 +355,7 @@ Please read this before relying on the tool.
 
 * **Automated tests use fake servers only.** The test suite (`tests/test_protocols.py`) starts small imitation servers on `127.0.0.1` that were written from the published protocol specifications. They prove the code follows those specifications. They do **not** prove it works against every real server.
 * **No mode has been verified against a real Minecraft server by the authors.** This applies to `ping`, `query`, `rcon` and `ghost` alike. Treat the first run against your own server as the real test, and open an issue if something is different.
-* **Python versions:** The code is written for Python `3.10+`. CI runs `3.10`, `3.11` and `3.12` on Linux, macOS and Windows.
+* **Python versions:** The code is written for Python `3.10+`. CI runs `3.10` through `3.15` on Linux, macOS and Windows.
 
 ### 7.2 Minecraft version support
 
