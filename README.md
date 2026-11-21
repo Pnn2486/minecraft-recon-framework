@@ -1,5 +1,9 @@
 # minecraft-recon-framework
 
+[![CI](https://github.com/Pnn2486/minecraft-recon-framework/actions/workflows/ci.yml/badge.svg)](https://github.com/Pnn2486/minecraft-recon-framework/actions/workflows/ci.yml)
+![Python 3.10 to 3.15](https://img.shields.io/badge/python-3.10%20to%203.15-blue)
+![Runtime dependencies: none](https://img.shields.io/badge/runtime%20dependencies-none-brightgreen)
+
 **Zero-dependency Python network diagnostics, wire-protocol dissection, and remote administration framework for Minecraft Java Edition infrastructure (`Python >= 3.10`, CPython standard library only).**
 
 `minecraft-recon-framework` implements deterministic TCP and UDP socket state machines across all four network intelligence layers exposed by Minecraft Java Edition server daemons:
@@ -22,6 +26,8 @@
 - **source**
   - **recon** - core Python package (PEP 420)
     - `cli.py` - argument parser, validation & dispatch entry point
+    - `gui.py` - local web interface server (`recon-gui`)
+    - **web** - the page the web interface shows (`index.html`, `style.css`, `app.js`, `favicon.svg`)
     - `exceptions.py` - structured exception hierarchy (`ReconError`, etc.)
     - **utils**
       - `varint.py` - Base-128 VarInt, `recv_exact` & UUID v3 generators
@@ -32,10 +38,17 @@
       - `rcon.py` - TCP little-endian Source RCON client
       - `ghost.py` - TCP play-state client (zlib, Configuration phase, Keep-Alive, chat)
       - `ghost_profiles.py` - per-version profile logic for `ghost.py`
+      - `chat.py` - decodes plain, signed, system and disguised chat packets
+      - `diagnostics.py` - session report for the ghost client
+      - `rcon_presets.py` - ready-made read-only RCON command sets
       - `ghost_profile_data.py` - packet ID table, one row per protocol number
+    - `__main__.py` - makes `python -m recon` work
 - **.github**
+  - `dependabot.yml` - weekly update pull requests for GitHub Actions and pip
   - **workflows**
-    - `ci.yml` - matrix CI on Linux, macOS and Windows, Python 3.10-3.15
+    - `ci.yml` - tests on Linux, macOS and Windows with Python 3.10-3.15, plus lint, type check, coverage and a package build check
+    - `integration.yml` - manual test against a real Minecraft server in Docker
+    - `release.yml` - builds the package and creates a GitHub release when a version tag is pushed
 - **program_info**
   - `org.recon.Framework.json` - protocol & port manifest
 - **scripts**
@@ -45,6 +58,8 @@
 - **tests**
   - `test_varint.py` - unit tests for serialization & framing
   - `test_protocols.py` - loopback tests for ping, query, RCON, ghost and CLI validation
+  - `test_gui.py` - tests for the web interface server, its safety checks and its files
+  - `test_chat.py` - tests for the NBT and text readers, the chat decoder, diagnostics and RCON presets
 
 - `pyproject.toml` - build spec & CLI entry point
 - `Containerfile` - Docker / Podman container spec
@@ -289,6 +304,25 @@ Exit code `0` means at least one attempted probe succeeded, `1` means every atte
 
 ---
 
+### 4.6 Web interface (`recon-gui`)
+
+If you prefer buttons to command-line flags, start the web interface. It needs nothing extra to be installed.
+
+```bash
+python3 -m recon.gui          # or, after `pip install .`: recon-gui
+```
+
+This starts a small server on your own computer and opens `http://127.0.0.1:8765/` in your browser. If that port is busy it picks a free one and prints the address. The layout follows launchers such as Prism Launcher, with a modern look. Your saved servers are tiles in a grid, a toolbar on top adds, edits and removes them, and a side panel on the right shows the selected server and its four tools: server status (ping), server details (query), console (RCON) and test player (ghost client). Pick a tile, pick a tool, tick the box that says you own the server or have permission to test it, and press the green button at the bottom. Double-clicking a tile runs the chosen tool.
+
+* **Chat and diagnostics.** The test player result shows the chat it saw as a list of messages, plus an optional diagnostics section. Plain, signed, system and disguised chat is decoded for the versions in the packet table, including the NBT text of 1.20.3 and newer. Signed chat is not encrypted, so its text is readable. Signatures are skipped, not checked. The encryption of an online-mode connection is not touched, and the test player cannot join such servers. A chat packet that does not match any known layout is listed as not decoded, with its readable text shown in the diagnostics.
+* **Quick checks.** The console tool has a list of read-only command sets (overview, performance, plugins, players, world). They run on one RCON connection and each answer is shown under its command.
+* **Same code as the command line.** The page runs the same functions as `recon`, so the same checks and limits apply. It shows ping and query results as cards and everything else as text.
+* **Only on this computer.** The server listens on `127.0.0.1`, rejects other host names, needs a random token that is created at every start, and refuses requests that come from other web sites. Do not put it behind a reverse proxy or expose it to a network.
+* **One job at a time.** A test player run lasts at most 120 seconds and cannot be cancelled early. Close the program with Ctrl+C to stop everything.
+* **Saved servers.** The server list (name, address, ports, icon and last status) is stored in this browser only. The RCON password is only kept in the form while the page is open. It is never saved or shown in the results.
+* **Options.** `--port 9000` picks the port and `--no-browser` stops it from opening the browser.
+* **Status.** The page was checked in a headless Chromium browser together with fake servers. It has not been used against a real Minecraft server. The chat decoder was written from the published packet layouts and tested only with hand-built packets, so a version can still differ in practice.
+
 ## 5. Programmatic Python API integration
 
 ```python
@@ -332,12 +366,14 @@ except ReconError as err:
 | `--port` | `int` | `25565` | Target TCP/UDP game port (`ping`, `query`, `ghost`) |
 | `--rcon-port` | `int` | `25575` | Target TCP RCON port (`rcon` mode) |
 | `--timeout` | `float` | `5.0` | Socket timeout in seconds |
-| `--password` | `str` | `""` | RCON authentication secret (required for `--mode rcon`) |
-| `--cmd` | `str` | `"list"` | Server console command payload for RCON execution |
+| `--password` | `str` | *(unset)* | RCON authentication secret (required for `--mode rcon`). If it is not given, the `MC_RCON_PASSWORD` environment variable is used. The environment variable is safer, because command-line arguments are visible to other users and saved in shell history. |
+| `--cmd` | `str` | `"list"` | Server console command for RCON. Repeat the option to run several commands on one connection |
+| `--preset` | `str` | *(unset)* | Ready-made read-only RCON command set: `overview`, `performance`, `plugins`, `players` or `world`. Commands the server does not know are answered with the server's own error text |
 | `--username` | `str` | `"AuditNode"` | `Login Start (0x00)` username for `ghost` mode |
 | `--protocol-version` | `str` | `auto` | Version for `ghost` mode: a Minecraft version (`1.16.5`), a protocol number (`754`), or `auto` to detect it from the server with a status ping. Versions without a profile are rejected (see section 3.4) |
 | `--list-versions` | `flag` | `False` | Print every known Minecraft version with its protocol number and whether ghost mode supports it, then exit |
 | `--duration` | `int` | `30` | Socket read-loop TTL in seconds for `ghost` mode |
+| `--diagnostics` | `flag` | `False` | Print a session report after `ghost` mode: timeline, packet counts, keep-alive timing and how many chat packets were decoded. Every report line starts with `[#]` |
 | `--quiet` | `flag` | `False` | Suppress compliance banner on `stderr` for clean JSON piping |
 
 * **Exit code `0`:** Handshake and payload deserialization succeeded.
@@ -381,6 +417,20 @@ Please read this before relying on the tool.
 * **Addressing.** The UDP `query` mode is IPv4 only. The TCP modes (`ping`, `rcon`, `ghost`) accept IPv4 or IPv6. SRV record lookups (`_minecraft._tcp`) are not performed, so use the real host and port.
 * **`tps` is not a vanilla command.** It exists only on Paper, Spigot and compatible servers.
 * **Legal responsibility stays with you.** Use the tool only on servers you own or have written permission to test. See [COPYING.md](./COPYING.md).
+
+### 7.5 Test layers
+
+* **Fast tests (every push and pull request):** the loopback suite in `tests/`, a lint and type check (`ruff`, `mypy`), a coverage check that fails below 80 percent, and a build of the package that is installed and smoke tested in a clean environment.
+* **Real server test (manual):** the `Real server integration test` workflow starts a disposable offline-mode server in Docker and runs `ping`, `query`, `rcon` and `ghost` against it. It only runs when you start it from the Actions tab, so ordinary CI does not depend on Docker. It has not been run yet, so the first run may need small fixes.
+* **Testing safely on your own machine:** to try the tool without touching anyone else's server, run your own local server with the same settings the workflow uses (`online-mode=false`, query and RCON enabled) and point the tool at `127.0.0.1`.
+
+### 7.6 Security notes
+
+* **RCON password.** The password is never printed, logged or included in error messages. Prefer the `MC_RCON_PASSWORD` environment variable to `--password`.
+* **Timeouts and retries.** Every connection has a timeout (default 5 seconds). There are no automatic retries on purpose, so a failing target is never hit repeatedly.
+* **Web interface.** `recon-gui` listens on `127.0.0.1` only and checks the host name, a per-run token and the origin of every request. See section 4.6.
+* **Hosts and ports.** Ports must be 1 to 65535. Host names must be 1 to 253 characters with no spaces or control characters.
+* **Proxies and DNS.** The tool ignores proxy settings and connects directly. It resolves host names with the operating system and does not look up SRV records, so use the real host and port.
 
 ---
 
