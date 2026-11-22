@@ -36,7 +36,7 @@
       - `ping.py` - TCP `0x00` Status + `0x01` RTT latency
       - `query.py` - UDP `0xFEFD` GameSpy4 challenge/response
       - `rcon.py` - TCP little-endian Source RCON client
-      - `ghost.py` - TCP play-state client (zlib, Configuration phase, Keep-Alive, chat)
+      - `ghost.py` - TCP play-state client (zlib, configuration phase, keep-alive, chat)
       - `ghost_profiles.py` - per-version profile logic for `ghost.py`
       - `chat.py` - decodes plain, signed, system and disguised chat packets
       - `diagnostics.py` - session report for the ghost client
@@ -59,15 +59,18 @@
   - `test_varint.py` - unit tests for serialization & framing
   - `test_protocols.py` - loopback tests for ping, query, RCON, ghost and CLI validation
   - `test_gui.py` - tests for the web interface server, its safety checks and its files
+  - `test_boot.py` - tests for the launcher: system detection, install hints and the launcher files
   - `test_chat.py` - tests for the NBT and text readers, the chat decoder, diagnostics and RCON presets
 
+- `boot.py` - starts the web interface on any system (detects the system and checks Python)
+- `boot-windows.bat`, `boot-mac.command`, `boot-linux.sh` - double-click launchers that call `boot.py`
 - `pyproject.toml` - build spec & CLI entry point
 - `Containerfile` - Docker / Podman container spec
 - `README.md` - this file
 - `CONTRIBUTING.md` - pull request & coding standards
 - `CODE_OF_CONDUCT.md` - community conduct rules & ethical-use standard
 - `COPYING.md` - liability disclaimer
-- `LICENSE` - Authorized Use License
+- `LICENSE` - authorized use license
 - `.editorconfig`, `.gitattributes`, `.gitignore` - other necessary files
 
 ---
@@ -178,7 +181,7 @@ Valve Source RCON frames integers in **32-bit signed little-endian** (`<i`) byte
    ```text
    [VarInt: Frame Length] [VarInt: Uncompressed Data Length] [zlib.compress(Packet ID + Payload)]
    ```
-3. **Configuration phase (1.20.2+ only):** After `Login Success (0x02)`, the client sends `Login Acknowledged`, answers the server's Known Packs with an empty list, echoes Keep-Alive and Ping, and acknowledges `Finish Configuration` before entering Play.
+3. **Configuration phase (1.20.2+ only):** After the login success packet (`0x02`), the client sends `Login Acknowledged`, answers the server's Known Packs with an empty list, echoes Keep-Alive and Ping, and acknowledges `Finish Configuration` before entering Play.
 4. **Play-state heartbeat loop:** Echoes the server's Keep-Alive token back unchanged (a VarInt before 1.12.2, a 64-bit integer from 1.12.2 on) to maintain socket persistence and reports incoming chat packets. Packet IDs come from the profile for the selected `--protocol-version`.
 
 >[!NOTE]
@@ -242,7 +245,7 @@ recon --host 127.0.0.1 --port 25565 --mode ping --quiet
 
 ---
 
-### 4.2 macOS (Apple Silicon & Intel — Zsh / Bash)
+### 4.2 macOS (Apple Silicon and Intel, Zsh or Bash)
 
 ```zsh
 git clone https://github.com/Pnn2486/minecraft-recon-framework.git
@@ -323,6 +326,21 @@ This starts a small server on your own computer and opens `http://127.0.0.1:8765
 * **Options.** `--port 9000` picks the port and `--no-browser` stops it from opening the browser.
 * **Status.** The page was checked in a headless Chromium browser together with fake servers. It has not been used against a real Minecraft server. The chat decoder was written from the published packet layouts and tested only with hand-built packets, so a version can still differ in practice.
 
+### 4.7 Double-click launchers (no setup)
+
+These files start the web interface without installing anything. Python 3.10 or newer must already be on the computer. If it is missing, the window prints the install command for your system.
+
+| System | File | How to start it |
+|---|---|---|
+| Windows | `boot-windows.bat` | Double-click it. If Windows shows a blue warning, choose More info, then Run anyway. |
+| macOS | `boot-mac.command` | Double-click it. The first time, right-click it and choose Open. |
+| Linux (any distribution) | `boot-linux.sh` | Open it from your file manager, or run `sh boot-linux.sh`. |
+| Anything else | `boot.py` | Run `python boot.py`. |
+
+`boot.py` is the adapter behind them. It detects the system, finds the distribution on Linux (Debian, Ubuntu, Mint, Fedora, RHEL, Arch, openSUSE, Alpine, Void, Gentoo, NixOS and the systems based on them), checks the Python version and starts `recon-gui`. `python boot.py --list` shows the install hints for every system, and `python boot.py --os mac` shows the hint for one. Options such as `--port 9000` or `--no-browser` are passed on to the interface.
+
+Files that come from a download or a web upload on GitHub lose their "runnable" mark. If a double-click does nothing on macOS or Linux, open a terminal in the project folder and type `sh boot-mac.command` or `sh boot-linux.sh` once, or `chmod +x boot-linux.sh boot-mac.command` to make them double-clickable.
+
 ## 5. Programmatic Python API integration
 
 ```python
@@ -369,7 +387,7 @@ except ReconError as err:
 | `--password` | `str` | *(unset)* | RCON authentication secret (required for `--mode rcon`). If it is not given, the `MC_RCON_PASSWORD` environment variable is used. The environment variable is safer, because command-line arguments are visible to other users and saved in shell history. |
 | `--cmd` | `str` | `"list"` | Server console command for RCON. Repeat the option to run several commands on one connection |
 | `--preset` | `str` | *(unset)* | Ready-made read-only RCON command set: `overview`, `performance`, `plugins`, `players` or `world`. Commands the server does not know are answered with the server's own error text |
-| `--username` | `str` | `"AuditNode"` | `Login Start (0x00)` username for `ghost` mode |
+| `--username` | `str` | `"AuditNode"` | Username sent in the login start packet (`0x00`) for `ghost` mode |
 | `--protocol-version` | `str` | `auto` | Version for `ghost` mode: a Minecraft version (`1.16.5`), a protocol number (`754`), or `auto` to detect it from the server with a status ping. Versions without a profile are rejected (see section 3.4) |
 | `--list-versions` | `flag` | `False` | Print every known Minecraft version with its protocol number and whether ghost mode supports it, then exit |
 | `--duration` | `int` | `30` | Socket read-loop TTL in seconds for `ghost` mode |
@@ -407,7 +425,7 @@ Please read this before relying on the tool.
 * **Offline-mode servers only.** The target must have `online-mode=false`. Servers that require Mojang authentication reply with an Encryption Request, and the client stops with `OnlineModeRequiredError`. It does not implement encryption or authentication.
 * **Unsupported versions:** Minecraft 1.7.x (protocols `4` and `5`), 1.9.1, 1.14.2, 26.2, 26.3 and all snapshots have no packet table, although their names are known (`recon --list-versions` marks them). Supporting one means adding a row to `source/recon/protocols/ghost_profile_data.py`.
 * **Chat is only partly decoded.** On 1.8 - 1.20.2 plain chat is shown as raw JSON text. Signed player chat and the NBT text used from 1.20.3 on are reported as a packet ID and size only.
-* **Passive behavior.** The client echoes Keep-Alive and Ping packets and ignores world data. It does not move, send chat, or load chunks. Servers with anti-bot plugins, whitelists, or proxies (BungeeCord, Velocity) may kick it.
+* **Passive behavior.** The client echoes keep-alive and ping packets and ignores world data. It does not move, send chat, or load chunks. Servers with anti-bot plugins, whitelists, or proxies (BungeeCord, Velocity) may kick it.
 * **Listening window.** Sessions end after `--duration` seconds. If the server sends nothing for longer than `--timeout`, the session stops with a timeout error (exit code `1`).
 * **Automatic detection can be wrong behind proxies.** Proxies and multi-version plugins may report a different protocol number than the server behind them. If login fails, pass `--protocol-version` explicitly.
 
