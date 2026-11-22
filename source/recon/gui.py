@@ -1,7 +1,7 @@
 """
 Local web interface for minecraft-recon-framework.
 
-Starts a small web server that only listens on this computer (127.0.0.1) and opens the page in your browser.
+Starts a small web server that only listens on your computer (127.0.0.1) and opens the page in your browser.
 The page runs the same code as the command line tool, so every limit and safety check of the CLI still applies.
 
 Safety measures:
@@ -325,7 +325,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         if not self._host_ok():
-            self._fail(403, "Unexpected Host header.")
+            self._fail(403, "Unexpected host header.")
             return
         parts = urlsplit(self.path)
         path = parts.path
@@ -367,7 +367,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         if not self._host_ok():
-            self._fail(403, "Unexpected Host header.")
+            self._fail(403, "Unexpected host header.")
             return
         if not self._api_ok():
             self._fail(403, "Missing or wrong token.")
