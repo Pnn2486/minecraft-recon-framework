@@ -1,5 +1,5 @@
 """
-Protocol 2: UDP GameSpy4 Query Protocol (0xFEFD Challenge-Response Full Stat Dump).
+Protocol 2: UDP GameSpy4 query protocol (0xFEFD challenge-response, full stat dump)
 """
 
 import socket
@@ -18,10 +18,7 @@ def gamespy4_full_query(
     timeout: float = 5.0,
     session_id: int = 0x01020304,
 ) -> dict:
-    """
-    Executes the stateless two-phase UDP GameSpy4 Full Stat query.
-    Requires `enable-query=true` in the target server's `server.properties`.
-    """
+    """UDP full stat query, needs enable-query=true on the server"""
     masked_session = session_id & 0x0F0F0F0F
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(timeout)
@@ -32,7 +29,7 @@ def gamespy4_full_query(
 
         resp_data, _ = sock.recvfrom(4096)
         if len(resp_data) < 5 or resp_data[0] != PACKET_TYPE_HANDSHAKE:
-            raise ProtocolFramingError("Invalid GameSpy4 Handshake Challenge header.")
+            raise ProtocolFramingError("Invalid GameSpy4 handshake challenge header.")
 
         token_ascii = resp_data[5:].rstrip(b"\x00").decode("ascii", errors="strict")
         challenge_token = int(token_ascii)
@@ -49,7 +46,7 @@ def gamespy4_full_query(
 
         raw_stat, _ = sock.recvfrom(65535)
         if len(raw_stat) < 16 or raw_stat[0] != PACKET_TYPE_STAT:
-            raise ProtocolFramingError("Truncated or invalid GameSpy4 Full Stat response.")
+            raise ProtocolFramingError("Truncated or invalid GameSpy4 full stat response.")
 
         body = raw_stat[16:]
         if PLAYER_SECTION_DELIMITER not in body:
@@ -58,7 +55,7 @@ def gamespy4_full_query(
         kv_raw, players_raw = body.split(PLAYER_SECTION_DELIMITER, 1)
 
         kv_tokens = kv_raw.decode("utf-8", errors="replace").split("\x00")
-        metadata = dict(zip(kv_tokens[0::2], kv_tokens[1::2]))
+        metadata = dict(zip(kv_tokens[0::2], kv_tokens[1::2], strict=False))
 
         player_tokens = players_raw.rstrip(b"\x00").decode("utf-8", errors="replace").split("\x00")
         players = [p for p in player_tokens if p]
