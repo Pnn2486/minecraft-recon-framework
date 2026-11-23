@@ -1,25 +1,18 @@
-"""
-Loopback tests for the ping, query, RCON and ghost clients, plus CLI argument validation.
-
-Every test talks to a tiny fake server bound to 127.0.0.1 on an ephemeral port,
-so nothing ever leaves the local machine.
-
-Run from the repository root (the folder containing source/ and tests/):
-
-    Linux / macOS (bash/zsh) :
-        PYTHONPATH=source python3 -m unittest discover -s tests -v
-
-    Windows (PowerShell):
-        $env:PYTHONPATH="source"; python -m unittest discover -s tests -v
-"""
+"""Tests for ping, query, RCON and the test player, using a fake server on 127.0.0.1"""
 
 import contextlib
 import io
 import json
+import os
+import re
 import socket
+import subprocess
+import sys
 import struct
 import threading
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from recon import cli
 from recon.exceptions import (
@@ -90,7 +83,7 @@ def _unused_port() -> int:
 
 
 class TcpServer:
-    """Accepts loopback connections and runs `handler(conn)` for each of them."""
+    """Accepts loopback connections and runs `handler(conn)` for each of them"""
 
     def __init__(self, handler) -> None:
         self._handler = handler
@@ -115,7 +108,7 @@ class TcpServer:
         while not self._stop.is_set():
             try:
                 conn, _ = self._listener.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 return
@@ -131,7 +124,7 @@ class TcpServer:
 
 
 class QueryServer:
-    """Minimal GameSpy4 responder; `token` is the raw challenge-token bytes it hands out."""
+    """Minimal GameSpy4 responder; `token` is the raw challenge-token bytes it hands out"""
 
     def __init__(self, token: bytes = b"9513307\x00") -> None:
         self.token = token
@@ -167,7 +160,7 @@ class QueryServer:
         while not self._stop.is_set():
             try:
                 data, addr = self._sock.recvfrom(4096)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 return
@@ -193,13 +186,13 @@ def _status_handler(conn: socket.socket) -> None:
 
 
 def _status_reply(conn: socket.socket, descriptor: dict) -> None:
-    """Answers one status request (after the handshake has been read)."""
+    """Answers one status request (after the handshake has been read)"""
     _recv_exact(conn, _read_varint(conn))  # status request
     conn.sendall(_frame(_varint(0x00) + _mc_string(json.dumps(descriptor))))
 
 
 def _parse_handshake(frame: bytes) -> tuple[int, int]:
-    """Returns (protocol number, next state) from a Handshake packet body."""
+    """Returns (protocol number, next state) from a Handshake packet body"""
     pos = 1  # packet id 0x00
     protocol = shift = 0
     while True:
@@ -235,7 +228,7 @@ def _rcon_handler(conn: socket.socket) -> None:
 
 
 def _read_compressed_packet(conn: socket.socket) -> bytes:
-    """Reads one client frame after Set Compression (threshold 256, small packets only)."""
+    """Reads one client frame after Set Compression (threshold 256, small packets only)"""
     frame = _recv_exact(conn, _read_varint(conn))
     assert frame[0] == 0, "expected uncompressed body (data length 0)"
     return frame[1:]
@@ -246,7 +239,7 @@ def _compressed(payload: bytes) -> bytes:
 
 
 def _ghost_handler_factory(state: dict):
-    """Fake 1.16.5 (protocol 754) server: no Configuration phase."""
+    """Fake 1.16.5 (protocol 754) server: no Configuration phase"""
     keep_alive_id = 123456789
 
     def handler(conn: socket.socket) -> None:
@@ -264,7 +257,7 @@ def _ghost_handler_factory(state: dict):
 
 
 def _ghost_121_handler_factory(state: dict):
-    """Fake 1.21.1 (protocol 767) server: Login -> Configuration -> Play."""
+    """Fake 1.21.1 (protocol 767) server: Login -> Configuration -> Play"""
     keep_alive_id = 987654321
     state["steps"] = []
 
@@ -376,7 +369,7 @@ class TestGhost(unittest.TestCase):
         state, output = self._run_ghost(754)
         self.assertEqual(state["login_len"], 1 + 1 + len("AuditNode"))
         self.assertTrue(state["echo_ok"])
-        self.assertIn("Echoed Keep-Alive", output)
+        self.assertIn("Echoed keep-alive", output)
         self.assertIn("<Alice> hello", output)
 
     def test_protocol_767_full_login_configuration_play_flow(self) -> None:
@@ -392,7 +385,7 @@ class TestGhost(unittest.TestCase):
         )
         self.assertIn("Configuration finished", output)
         self.assertIn("packet 0x6C", output)
-        self.assertIn("Play-State Disconnect (0x1D)", output)
+        self.assertIn("Server disconnect in the play state (0x1D)", output)
 
     def test_unsupported_protocol_is_rejected_before_connecting(self) -> None:
         for version in (-1, 0, 5, 46, 600, 776, 99999):
@@ -407,7 +400,7 @@ class TestGhost(unittest.TestCase):
 
 
 def _expected_login_start(profile: GhostProfile, username: str) -> bytes:
-    """Independent description of the Login Start payload for each protocol era."""
+    """Independent description of the Login Start payload for each protocol era"""
     name = _mc_string(username)
     if profile.protocol <= 758:
         return name
@@ -421,8 +414,8 @@ def _expected_login_start(profile: GhostProfile, username: str) -> bytes:
 
 
 def _profile_handler_factory(profile: GhostProfile, state: dict):
-    """Generic fake server for any profile: Login -> (Configuration) -> Play."""
-    # The keep-alive token is a VarInt before 1.12.2 and a long afterwards; the client must echo raw bytes.
+    """Generic fake server for any profile: Login -> (Configuration) -> Play"""
+    # The keep-alive token is a VarInt before 1.12.2 and a long afterwards; the client must echo raw bytes
     token = _varint(300) if profile.protocol < 340 else struct.pack(">q", 1234567890123)
     state["token"] = token
     state["steps"] = {}
@@ -460,7 +453,7 @@ def _profile_handler_factory(profile: GhostProfile, state: dict):
 
 
 def _auto_server_handler_factory(profile: GhostProfile, state: dict, reported_protocol: int, reported_name: str):
-    """Fake server that answers a status ping first and then a login on the same port."""
+    """Fake server that answers a status ping first and then a login on the same port"""
     login_session = _profile_handler_factory(profile, state).session  # type: ignore[attr-defined]
 
     def handler(conn: socket.socket) -> None:
@@ -475,7 +468,7 @@ def _auto_server_handler_factory(profile: GhostProfile, state: dict, reported_pr
 
 
 class TestGhostAllProfiles(unittest.TestCase):
-    """Runs the whole ghost flow against a fake server for every supported protocol."""
+    """Runs the whole ghost flow against a fake server for every supported protocol"""
 
     def test_every_profile_completes_login_configuration_and_play(self) -> None:
         for protocol, profile in sorted(PROFILES.items()):
@@ -510,7 +503,7 @@ class TestGhostAllProfiles(unittest.TestCase):
                         self.assertEqual(
                             steps["known_packs"], _varint(profile.config_known_packs_out) + _varint(0)
                         )
-                self.assertIn("Play-State Disconnect", output)
+                self.assertIn("Server disconnect in the play state", output)
                 if profile.play_chat_json_ids:
                     self.assertIn("hello" if profile.text_is_json else "not decoded", output)
 
@@ -545,9 +538,8 @@ class TestGhostAllProfiles(unittest.TestCase):
             self.assertEqual(profile.config_known_packs_in >= 0, protocol >= 766, protocol)
 
 
-
 class TestGhostAutoDetect(unittest.TestCase):
-    """`--protocol-version auto`: ping first, then log in with the detected version."""
+    """`--protocol-version auto`: ping first, then log in with the detected version"""
 
     def _run_auto(self, protocol: int, reported_protocol: int | None = None) -> tuple[dict, str]:
         profile = PROFILES[protocol]
@@ -567,7 +559,7 @@ class TestGhostAutoDetect(unittest.TestCase):
                 state, output = self._run_auto(protocol)
                 self.assertIn(f"protocol {protocol})", output)
                 self.assertIn("Detected server version", output)
-                self.assertIn("Play-State Disconnect", output)
+                self.assertIn("Server disconnect in the play state", output)
                 expected_prefix = _varint(0x00) + _expected_login_start(PROFILES[protocol], "AuditNode")
                 self.assertTrue(state["login"].startswith(expected_prefix))
 
@@ -616,7 +608,7 @@ class TestGhostAutoDetect(unittest.TestCase):
 
 
 class TestVersionNames(unittest.TestCase):
-    """The protocol number <-> Minecraft version lookup."""
+    """The protocol number <-> Minecraft version lookup"""
 
     def test_known_conversions(self) -> None:
         expected = {
@@ -746,6 +738,70 @@ class TestCliValidation(unittest.TestCase):
         version = json.loads(output)["version"]
         self.assertEqual(version["protocol"], 767)
         self.assertEqual(version["minecraft_versions"], "1.21 - 1.21.1")
+
+
+class TestSecurityAndMetadata(unittest.TestCase):
+    ROOT = Path(__file__).resolve().parent.parent
+
+    def _run_cli(self, argv: list[str], env: dict[str, str] | None = None) -> tuple[object, str, str]:
+        stdout, stderr = io.StringIO(), io.StringIO()
+        code: object = None
+        with mock.patch.dict(os.environ, env or {}, clear=False), contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            try:
+                code = cli.main(argv)
+            except SystemExit as exc:
+                code = exc.code
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def test_rcon_password_can_come_from_the_environment(self) -> None:
+        with TcpServer(_rcon_handler) as server:
+            argv = ["--quiet", "--host", HOST, "--mode", "rcon", "--rcon-port", str(server.port)]
+            code, output, _ = self._run_cli(argv, {cli.PASSWORD_ENV_VAR: "secret"})
+        self.assertEqual(code, 0)
+        self.assertIn("Alice", output)
+
+    def test_rcon_without_any_password_exits_with_code_2(self) -> None:
+        env = dict(os.environ)
+        env.pop(cli.PASSWORD_ENV_VAR, None)
+        with mock.patch.dict(os.environ, env, clear=True):
+            code, _, stderr = self._run_cli(["--quiet", "--host", HOST, "--mode", "rcon"])
+        self.assertEqual(code, 2)
+        self.assertIn(cli.PASSWORD_ENV_VAR, stderr)
+
+    def test_wrong_password_is_never_printed(self) -> None:
+        wrong = "hunter2-do-not-leak"
+        with TcpServer(_rcon_handler) as server:
+            argv = ["--host", HOST, "--mode", "rcon", "--rcon-port", str(server.port), "--password", wrong]
+            code, stdout, stderr = self._run_cli(argv)
+        self.assertEqual(code, 1)
+        self.assertNotIn(wrong, stdout + stderr)
+
+    def test_password_default_is_not_shown_in_help(self) -> None:
+        with mock.patch.dict(os.environ, {cli.PASSWORD_ENV_VAR: "do-not-show-me"}):
+            self.assertNotIn("do-not-show-me", cli.build_parser().format_help())
+
+    def test_invalid_hosts_are_rejected(self) -> None:
+        for bad in ("", "   ", "bad host", "a\tb", "x" * 300, "line\nbreak"):
+            with self.subTest(host=repr(bad)):
+                code, _, _ = self._run_cli(["--quiet", "--host", bad, "--mode", "ping"])
+                self.assertEqual(code, 2)
+
+    def test_valid_hosts_are_accepted(self) -> None:
+        for good in ("localhost", "mc.example.org", "192.0.2.1", "::1", "2001:db8::1"):
+            with self.subTest(host=good):
+                self.assertEqual(cli.hostname(good), good)
+
+    def test_cli_version_matches_pyproject(self) -> None:
+        text = (self.ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        match = re.search(r'^version = "([^"]+)"', text, re.MULTILINE)
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(1), cli.VERSION)
+
+    def test_python_dash_m_recon_runs(self) -> None:
+        env = dict(os.environ, PYTHONPATH=str(self.ROOT / "source"))
+        result = subprocess.run([sys.executable, "-m", "recon", "--version"], capture_output=True, text=True, env=env, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(cli.VERSION, result.stdout)
 
 
 if __name__ == "__main__":
