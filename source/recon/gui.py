@@ -1,16 +1,4 @@
-"""
-Local web interface for minecraft-recon-framework.
-
-Starts a small web server that only listens on your computer (127.0.0.1) and opens the page in your browser.
-The page runs the same code as the command line tool, so every limit and safety check of the CLI still applies.
-
-Safety measures:
-    - The server only binds to 127.0.0.1 and rejects requests whose Host header is not 127.0.0.1 or localhost.
-    - Every API request needs a random token that is created at start-up and only handed to the page itself.
-    - Requests from other web sites (a different Origin) are rejected.
-    - A job only starts when the page confirms that you own the server or have written permission to test it.
-    - Only one job runs at a time.
-"""
+"""Local web interface, only reachable from your computer (README section 4.1)"""
 
 import argparse
 import contextlib
@@ -25,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from recon import cli
+from recon import cli, settings
 from recon.protocols.ghost_profiles import PROFILES
 from recon.protocols.rcon_presets import PRESET_LABELS, PRESETS
 from recon.utils.versions import VERSION_NAMES, version_range
@@ -37,14 +25,11 @@ STATIC_FILES = {
     "favicon.svg": "image/svg+xml",
 }
 MODES = ("ping", "query", "rcon", "ghost")
-DEFAULT_PORT = 8765
-MAX_BODY_BYTES = 16 * 1024
-MAX_LINES = 5000
-MAX_LINE_CHARS = 100_000
-MAX_TIMEOUT_SECONDS = 60
-MAX_DURATION_SECONDS = 120
-MAX_COMMAND_CHARS = 1000
-MAX_PASSWORD_CHARS = 256
+MAX_BODY_BYTES = 16 * 1024  # fixed on purpose, not a setting
+
+
+def _limit(name: str) -> int:
+    return settings.get("limits", name)  # type: ignore[no-any-return]
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,16}$")
 CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 CONTENT_SECURITY_POLICY = (
@@ -54,11 +39,11 @@ CONTENT_SECURITY_POLICY = (
 
 
 class RequestError(Exception):
-    """The page sent something that cannot be run. The message is shown to the user."""
+    """The page sent something that cannot be run. The message is shown to the user"""
 
 
 class JobBusyError(Exception):
-    """Another job is still running."""
+    """Another job is still running"""
 
 
 def _field(payload: dict, key: str) -> str:
@@ -83,7 +68,7 @@ def _checked(payload: dict, key: str, label: str, validator, required: bool = Fa
 
 
 def build_argv(payload: dict) -> list[str]:
-    """Turns the form values of the page into command line arguments for `recon.cli.main`."""
+    """Turns the form values of the page into command line arguments for `recon.cli.main`"""
     mode = payload.get("mode")
     if mode not in MODES:
         raise RequestError("Choose a tool first.")
@@ -95,8 +80,8 @@ def build_argv(payload: dict) -> list[str]:
 
     timeout = _checked(payload, "timeout", "Timeout", cli.positive_seconds)
     if timeout is not None:
-        if float(timeout) > MAX_TIMEOUT_SECONDS:
-            raise RequestError(f"Timeout: must be at most {MAX_TIMEOUT_SECONDS} seconds.")
+        if float(timeout) > _limit("max_timeout_seconds"):
+            raise RequestError(f"Timeout: must be at most {_limit('max_timeout_seconds')} seconds.")
         argv += ["--timeout", timeout]
 
     if mode == "rcon":
@@ -106,14 +91,14 @@ def build_argv(payload: dict) -> list[str]:
         password = payload.get("password")
         if not isinstance(password, str) or not password:
             raise RequestError("Enter the RCON password.")
-        if len(password) > MAX_PASSWORD_CHARS or CONTROL_CHARS.search(password):
+        if len(password) > _limit("max_password_chars") or CONTROL_CHARS.search(password):
             raise RequestError("RCON password: too long or contains control characters.")
         preset = _field(payload, "preset")
         if preset and preset not in PRESETS:
             raise RequestError("Quick check: choose one of the listed sets.")
         command = _field(payload, "command")
-        if len(command) > MAX_COMMAND_CHARS or CONTROL_CHARS.search(command):
-            raise RequestError(f"Command: must be at most {MAX_COMMAND_CHARS} characters, on one line.")
+        if len(command) > _limit("max_command_chars") or CONTROL_CHARS.search(command):
+            raise RequestError(f"Command: must be at most {_limit('max_command_chars')} characters, on one line.")
         argv += ["--password", password]
         if preset:
             argv += ["--preset", preset]
@@ -135,8 +120,8 @@ def build_argv(payload: dict) -> list[str]:
             argv += ["--protocol-version", version]
         duration = _checked(payload, "duration", "Duration", cli.positive_int)
         if duration is not None:
-            if int(duration) > MAX_DURATION_SECONDS:
-                raise RequestError(f"Duration: must be at most {MAX_DURATION_SECONDS} seconds.")
+            if int(duration) > _limit("max_duration_seconds"):
+                raise RequestError(f"Duration: must be at most {_limit('max_duration_seconds')} seconds.")
             argv += ["--duration", duration]
         diagnostics = payload.get("diagnostics")
         if diagnostics not in (None, True, False):
@@ -147,7 +132,7 @@ def build_argv(payload: dict) -> list[str]:
 
 
 class Job:
-    """Output and state of one run, read by the page while it is running."""
+    """Output and state of one run, read by the page while it is running"""
 
     def __init__(self, job_id: str, mode: str) -> None:
         self.id = job_id
@@ -162,10 +147,10 @@ class Job:
 
     def add(self, stream: str, text: str) -> None:
         with self.lock:
-            if len(self.lines) >= MAX_LINES:
+            if len(self.lines) >= _limit("max_output_lines"):
                 self.truncated = True
                 return
-            self.lines.append({"stream": stream, "text": text[:MAX_LINE_CHARS]})
+            self.lines.append({"stream": stream, "text": text[: _limit("max_line_chars")]})
 
     def finish(self, exit_code: int) -> None:
         with self.lock:
@@ -188,7 +173,7 @@ class Job:
 
 
 class _LineWriter(io.TextIOBase):
-    """Collects what the CLI prints and hands it to the job one line at a time."""
+    """Collects what the CLI prints and hands it to the job one line at a time"""
 
     def __init__(self, job: Job, stream: str) -> None:
         self._job = job
@@ -215,9 +200,7 @@ class _LineWriter(io.TextIOBase):
 
 
 class JobRunner:
-    """Runs one job at a time in a background thread."""
-
-    KEEP_JOBS = 10
+    """Runs one job at a time in a background thread"""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -230,7 +213,7 @@ class JobRunner:
                 raise JobBusyError("A job is still running. Wait for it to finish.")
             job = Job(secrets.token_hex(8), mode)
             self._jobs[job.id] = job
-            while len(self._jobs) > self.KEEP_JOBS:
+            while len(self._jobs) > _limit("keep_jobs"):
                 del self._jobs[next(iter(self._jobs))]
             self._current = job
         threading.Thread(target=self._run, args=(job, argv), daemon=True).start()
@@ -349,7 +332,10 @@ class _Handler(BaseHTTPRequestHandler):
     def _get_api(self, path: str, query: dict[str, list[str]]) -> None:
         if path == "/api/info":
             presets = [{"name": name, "label": PRESET_LABELS[name]} for name in PRESETS]
-            self._json(200, {"version": cli.VERSION, "modes": list(MODES), "presets": presets})
+            cfg = settings.current()
+            limits = {"max_timeout_seconds": _limit("max_timeout_seconds"), "max_duration_seconds": _limit("max_duration_seconds")}
+            shown = {"timeout": cfg["defaults"]["timeout"], "duration": cfg["defaults"]["duration"], "username": cfg["defaults"]["username"]}
+            self._json(200, {"version": cli.VERSION, "modes": list(MODES), "presets": presets, "limits": limits, "defaults": shown})
         elif path == "/api/versions":
             self._json(200, {"versions": _version_rows()})
         elif path.startswith("/api/jobs/"):
@@ -407,11 +393,17 @@ def create_server(port: int = 0) -> ReconWebServer:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="recon-gui", description="Open the Minecraft Recon web interface in your browser.")
     parser.add_argument("--version", action="version", version=f"recon-gui {cli.VERSION}")
-    parser.add_argument("--port", type=cli.port_number, default=None, help=f"Port for the local page (default: {DEFAULT_PORT}, or any free port)")
+    parser.add_argument("--config", default=None, metavar="FILE", help=f"Settings file to use (default: the {settings.ENV_VAR} variable, or settings.ini in this folder or the project folder)")
+    parser.add_argument("--port", type=cli.port_number, default=None, help="Port for the local page (default: web port from the settings, or any free port)")
     parser.add_argument("--no-browser", action="store_true", help="Do not open the browser automatically")
     args = parser.parse_args(argv)
 
-    candidates = [args.port] if args.port else [DEFAULT_PORT, 0]
+    try:
+        settings.use_file(args.config)
+    except settings.SettingsError as exc:
+        print(f"[!] {exc}", file=cli.sys.stderr)
+        return 2
+    candidates: list[int] = [args.port] if args.port else [settings.get("web", "port"), 0]
     server: ReconWebServer | None = None
     last_error: OSError | None = None
     for candidate in candidates:
@@ -426,8 +418,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(cli.COMPLIANCE_BANNER)
     print(f"Minecraft Recon is running at {server.url}")
+    print(f"Settings: {settings.origin() or 'built-in values (no settings.ini found)'}")
     print("The page only works on this computer. Press Ctrl+C to stop.")
-    if not args.no_browser and not webbrowser.open(server.url):
+    if not args.no_browser and settings.get("web", "open_browser") and not webbrowser.open(server.url):
         print("Could not open a browser automatically. Open the address above yourself.")
     try:
         server.serve_forever()
