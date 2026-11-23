@@ -1,6 +1,4 @@
-"""
-Session diagnostics for the ghost client.
-"""
+"""Summary of a test player session"""
 
 import time
 from collections import Counter
