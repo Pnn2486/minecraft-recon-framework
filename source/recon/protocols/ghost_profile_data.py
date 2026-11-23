@@ -1,29 +1,4 @@
-"""
-Packet ID table for the headless ghost client, one row per Minecraft protocol number.
-
-THIS FILE IS DATA ONLY. To support a new Minecraft release, append one row.
-
-Source: PrismarineJS `minecraft-data`, file `data/pc/<version>/protocol.json`.
-https://github.com/PrismarineJS/minecraft-data
-The rows for 1.16.5 (754) and 1.21.1 (767) were also checked by hand against the published protocol documentation.
-
-Row layout:
-    (protocol, login_start_format, keep_alive_in, keep_alive_out, play_disconnect,
-     chat_json_ids, chat_opaque_ids, text_is_json, configuration)
-
-    The Minecraft version name is NOT stored here. It comes from the one lookup table in
-    recon/utils/versions.py, so add the release name there when you add a row.
-
-    login_start_format   see ghost_profiles.LOGIN_START_FORMATS
-    chat_json_ids        play packets whose first field is a JSON chat string
-    chat_opaque_ids      signed or NBT chat packets, reported by size only
-    text_is_json         False from protocol 765 (1.20.3) on, when text became NBT
-    configuration        None before 1.20.2, otherwise the tuple
-                         (disconnect_in, finish_in, finish_ack_out, keep_alive_in, keep_alive_out,
-                          ping_in, pong_out, known_packs_in, known_packs_out, login_acknowledged_out)
-                         where known_packs_* is None for 1.20.2 - 1.20.4
-"""
-
+"""Packet IDs for the test player, one row per protocol number (README section 10.5)"""
 
 ROWS = (
     (47, "name", 0x00, 0x00, 0x40, (0x02,), (), True, None),
