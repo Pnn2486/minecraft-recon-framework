@@ -1,15 +1,4 @@
-"""
-Starts the web interface on any system, no setup needed.
-
-    python boot.py             works out your system, checks Python and opens the page
-    python boot.py --list      shows the systems it knows and how to install Python on each
-    python boot.py --os mac    shows the install hint for another system
-
-Anything else you add (--port, --no-browser, --version) gets passed on to the interface.
-The three boot files (windows, mac, linux) just find Python and then run this file.
-It avoids new Python features on purpose, so an old Python shows a clear message instead of a syntax error.
-"""
-
+"""Starts the web page on any system, after checking the OS and the Python version (README section 4.2)"""
 
 import argparse
 import os
@@ -37,13 +26,13 @@ SYSTEMS = {
 
 
 def detect_system(name=None):
-    """Returns 'windows', 'mac', 'linux' or 'other'."""
+    """Gives back windows, mac, linux or other"""
     name = name if name is not None else platform.system()
     return {"Windows": "windows", "Darwin": "mac", "Linux": "linux"}.get(name, "other")
 
 
 def parse_os_release(text):
-    """Reads the ID and ID_LIKE words from the text of /etc/os-release."""
+    """Pulls the ID and ID_LIKE words out of the text of /etc/os-release"""
     words = []
     for line in text.splitlines():
         key, _, value = line.partition("=")
@@ -53,7 +42,7 @@ def parse_os_release(text):
 
 
 def linux_family(words):
-    """Returns (family name, install command) for the first matching entry, or None."""
+    """Finds the first matching family and gives back its name and install command, or None"""
     for family, ids, command in LINUX_FAMILIES:
         if any(word in ids for word in words):
             return family, command
@@ -71,7 +60,7 @@ def read_os_release():
 
 
 def install_hint(system, words=None):
-    """A short, copyable instruction for installing Python on the given system."""
+    """A short line you can copy to install Python on that system"""
     if system == "linux":
         match = linux_family(words if words is not None else parse_os_release(read_os_release()))
         if match:
@@ -83,7 +72,7 @@ def install_hint(system, words=None):
 
 
 def print_list():
-    print("Systems this launcher knows:")
+    print("Systems I know:")
     print("  Windows   double-click boot-windows.bat")
     print("  macOS     double-click boot-mac.command")
     print("  Linux     run boot-linux.sh, or open it from your file manager")
@@ -97,9 +86,9 @@ def print_list():
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Start the recon web interface on this computer.", add_help=True)
-    parser.add_argument("--list", action="store_true", help="show the systems this launcher knows and the install hints")
-    parser.add_argument("--os", choices=sorted(SYSTEMS), default=None, help="print the Python install hint for another system, then exit")
+    parser = argparse.ArgumentParser(description="Start the web interface on this computer.", add_help=True)
+    parser.add_argument("--list", action="store_true", help="show the systems I know and how to install Python on them")
+    parser.add_argument("--os", choices=sorted(SYSTEMS), default=None, help="show the Python install hint for another system, then stop")
     args, rest = parser.parse_known_args(argv)
 
     if args.list:
@@ -111,14 +100,14 @@ def main(argv=None):
 
     system = detect_system()
     if sys.version_info < MINIMUM:
-        print(f"This program needs Python {MINIMUM[0]}.{MINIMUM[1]} or newer. You have {sys.version_info[0]}.{sys.version_info[1]}.")
+        print(f"You need Python {MINIMUM[0]}.{MINIMUM[1]} or newer. You have {sys.version_info[0]}.{sys.version_info[1]}.")
         print(install_hint(system))
         return 1
 
     root = os.path.dirname(os.path.abspath(__file__))
     source = os.path.join(root, "source")
     if not os.path.isdir(os.path.join(source, "recon")):
-        print("Could not find the source/recon folder next to boot.py. Keep this file in the main folder of the project.")
+        print("I can't find the source/recon folder next to boot.py. Keep this file in the main folder of the project.")
         return 1
     sys.path.insert(0, source)
 
