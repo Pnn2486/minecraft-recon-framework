@@ -672,7 +672,7 @@ Signed chat is only signed, not encrypted, so its text can be read and gets deco
 | Versions | Order of the opaque chat packets |
 |---|---|
 | 1.19 and 1.19.1 to 1.19.2 (759, 760) | player chat |
-| 1.19.3 to 1.20.3 (761 to 764) | player chat, disguised chat |
+| 1.19.3 to 1.20.2 (761 to 764) | player chat, disguised chat |
 | 1.20.3 and newer (765 and up) | system chat, player chat, disguised chat |
 
 Player chat changed its layout several times, so the decoder tries the plausible layouts and keeps the first one that gives clean text. When nothing fits, the packet is printed as `packet 0xNN (N bytes, not decoded)` and the diagnostics show the readable text inside it. Text that arrives as NBT (1.20.3 and newer) is read by `source/recon/utils/nbt.py`. It never trusts a length from the network: depth, element counts and total size are capped, and every problem is reported as a framing error. `source/recon/utils/text.py` turns the result into plain text, fills in the common message keys (chat, joined, left and so on) and shows an unknown key as the key followed by its arguments, so nothing is lost silently.
