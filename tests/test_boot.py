@@ -1,4 +1,4 @@
-"""Tests for the boot launcher including OS detection, install hints and launcher files"""
+"""Tests for the boot launcher: system detection, install hints and launcher files"""
 
 import ast
 import importlib.util
