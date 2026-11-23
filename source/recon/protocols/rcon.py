@@ -1,7 +1,4 @@
-"""
-Protocol 3: TCP Remote Console (Valve Source RCON Binary Protocol).
-All integers are packed as 32-bit signed little-endian values (`<i`).
-"""
+"""Protocol 3: Source RCON, the remote console"""
 
 import socket
 import struct
@@ -15,7 +12,7 @@ SERVERDATA_RESPONSE_VALUE = 0
 
 
 class RCONClient:
-    """Stateful TCP Source RCON client supporting context manager lifecycle."""
+    """Stateful TCP Source RCON client supporting context manager lifecycle"""
 
     def __init__(self, host: str, port: int = 25575, timeout: float = 5.0) -> None:
         self.host = host
@@ -79,7 +76,7 @@ class RCONClient:
             resp_id, resp_type, _ = self._read_frame()
 
         if resp_id == -1 or resp_id != auth_id:
-            raise AuthenticationError("RCON Authentication Failed: Server rejected password (ID -1).")
+            raise AuthenticationError("RCON authentication failed: the server rejected the password (ID -1).")
 
     def execute(self, command: str) -> str:
         if self._sock is None:
@@ -98,7 +95,23 @@ def rcon_command(
     command: str,
     timeout: float = 5.0,
 ) -> str:
-    """One-shot helper to authenticate, execute a single RCON command, and close the socket."""
+    """One-shot helper to authenticate, execute a single RCON command, and close the socket"""
     with RCONClient(host=host, port=port, timeout=timeout) as client:
         client.authenticate(password)
         return client.execute(command)
+
+
+def rcon_commands(
+    host: str,
+    port: int,
+    password: str,
+    commands: list[str],
+    timeout: float = 5.0,
+) -> list[tuple[str, str]]:
+    """Authenticates once and runs several commands on the same connection. Returns `(command, output)` pairs"""
+    results: list[tuple[str, str]] = []
+    with RCONClient(host=host, port=port, timeout=timeout) as client:
+        client.authenticate(password)
+        for command in commands:
+            results.append((command, client.execute(command)))
+    return results
