@@ -1,15 +1,4 @@
-"""
-Minecraft release names for each protocol number, so output can say "1.16.5" instead of "754".
-
-Covers every Java Edition release from 1.7 (the first with the current network protocol) up to
-the newest one . A number can appear here without being supported by ghost
-mode (see ghost_profile_data.py): this table only translates numbers into names.
-
-Source: `data/pc/common/protocolVersions.json` in the PrismarineJS `minecraft-data` project
-(https://github.com/PrismarineJS/minecraft-data). Releases only; snapshots are left out.
-
-To add a release, append its name to the tuple for its protocol number (or add a new line).
-"""
+"""Minecraft version names for each protocol number, so output says 1.16.5 instead of 754"""
 
 VERSION_NAMES: dict[int, tuple[str, ...]] = {
     4: ('1.7.2', '1.7.4', '1.7.5'),
@@ -68,7 +57,7 @@ VERSION_NAMES: dict[int, tuple[str, ...]] = {
 
 
 def version_range(protocol: int) -> str | None:
-    """Readable release names for a protocol number: "1.16.4 - 1.16.5", "1.12.2", or None if unknown."""
+    """Readable release names for a protocol number: "1.16.4 - 1.16.5", "1.12.2", or None if unknown"""
     names = VERSION_NAMES.get(protocol)
     if not names:
         return None
@@ -87,5 +76,5 @@ _NAME_TO_PROTOCOL: dict[str, int] = {name: proto for proto, names in VERSION_NAM
 
 
 def protocol_for_name(name: str) -> int | None:
-    """Protocol number for a release name such as "1.16.5", or None if the name is unknown."""
+    """Protocol number for a release name such as "1.16.5", or None if the name is unknown"""
     return _NAME_TO_PROTOCOL.get(name.strip())
