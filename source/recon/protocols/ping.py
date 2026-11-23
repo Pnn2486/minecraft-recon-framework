@@ -1,5 +1,5 @@
 """
-Protocol 1: TCP Server List Ping (Packet 0x00 Status + Packet 0x01 Latency Probe).
+Protocol 1: TCP Server List Ping (Packet 0x00 Status + Packet 0x01 Latency Probe)
 """
 
 import json
@@ -24,10 +24,7 @@ def mc_status_ping(
     protocol_version: int = 767,
     measure_latency: bool = True,
 ) -> dict:
-    """
-    Executes a TCP Server List Ping (0x00) and optional Latency Ping/Pong (0x01).
-    Returns the parsed JSON dictionary enriched with `latency_ms` when enabled.
-    """
+    """Server list ping, plus a latency probe when asked"""
     try:
         with socket.create_connection((host, port), timeout=timeout) as sock:
             handshake_payload = (
