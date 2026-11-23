@@ -15,15 +15,16 @@ It is meant for servers that belong to you, or ones you have written permission 
 3. [What you can do with it](#3-what-you-can-do-with-it)
 4. [The web page and the launchers](#4-the-web-page-and-the-launchers)
 5. [Using the command line](#5-using-the-command-line)
-6. [When something goes wrong](#6-when-something-goes-wrong)
-7. [Limits and test status](#7-limits-and-test-status)
-8. [Project layout](#8-project-layout)
-9. [How the protocols work](#9-how-the-protocols-work)
-10. [Using it from Python code](#10-using-it-from-python-code)
-11. [Other tools](#11-other-tools)
-12. [References](#12-references)
+6. [The settings file](#6-the-settings-file)
+7. [When something goes wrong](#7-when-something-goes-wrong)
+8. [Limits and test status](#8-limits-and-test-status)
+9. [Project layout](#9-project-layout)
+10. [How the protocols work](#10-how-the-protocols-work)
+11. [Using it from Python code](#11-using-it-from-python-code)
+12. [Other tools](#12-other-tools)
+13. [References](#13-references)
 
-Sections 1 to 7 are for using the tool. Sections 8 to 12 are for people who want to read or change the code.
+Sections 1 to 8 are for using the tool. Sections 9 to 13 are for people who want to read or change the code.
 
 ---
 
@@ -280,7 +281,7 @@ This starts a small server on your own computer and opens `http://127.0.0.1:8765
 * **Quick checks.** The console tool has a list of read-only command sets (overview, performance, plugins, players, world). They run on one RCON connection and each answer is shown under its command.
 * **Same code as the command line.** The page runs the same functions as `recon`, so the same checks and limits apply. It shows ping and query results as cards and everything else as text.
 * **Only on this computer.** The server listens on `127.0.0.1`, rejects other host names, needs a random token that is created at every start, and refuses requests that come from other web sites. Do not put it behind a reverse proxy or expose it to a network.
-* **One job at a time.** A test player run lasts at most 120 seconds and cannot be cancelled early. Close the program with Ctrl+C to stop everything.
+* **One job at a time.** A test player run lasts at most 120 seconds by default (you can raise that in the settings file, see section 6) and cannot be cancelled early. Close the program with Ctrl+C to stop everything.
 * **Saved servers.** The server list (name, address, ports, icon and last status) is stored in this browser only. The RCON password is only kept in the form while the page is open. It is never saved or shown in the results.
 * **Options.** `--port 9000` picks the port and `--no-browser` stops it from opening the browser.
 * **Status.** The page was checked in a headless Chromium browser together with fake servers. It has not been used against a real Minecraft server. The chat decoder was written from the published packet layouts and tested only with hand-built packets, so a version can still differ in practice.
@@ -344,8 +345,9 @@ If you installed the project with pip, you can type `recon` instead of the long 
 | `--cmd` | `str` | `"list"` | Server console command for RCON. Repeat the option to run several commands on one connection |
 | `--preset` | `str` | *(unset)* | Ready-made read-only RCON command set: `overview`, `performance`, `plugins`, `players` or `world`. Commands the server does not know are answered with the server's own error text |
 | `--username` | `str` | `"AuditNode"` | Username sent in the login start packet (`0x00`) for `ghost` mode |
-| `--protocol-version` | `str` | `auto` | Version for `ghost` mode: a Minecraft version (`1.16.5`), a protocol number (`754`), or `auto` to detect it from the server with a status ping. Versions without a profile are rejected (see section 9.4) |
+| `--protocol-version` | `str` | `auto` | Version for `ghost` mode: a Minecraft version (`1.16.5`), a protocol number (`754`), or `auto` to detect it from the server with a status ping. Versions without a profile are rejected (see section 10.4) |
 | `--list-versions` | `flag` | `False` | Print every known Minecraft version with its protocol number and whether ghost mode supports it, then exit |
+| `--config` | `path` | *(unset)* | Settings file to use (see section 6). |
 | `--duration` | `int` | `30` | Socket read-loop TTL in seconds for `ghost` mode |
 | `--diagnostics` | `flag` | `False` | Print a session report after `ghost` mode: timeline, packet counts, keep-alive timing and how many chat packets were decoded. Every report line starts with `[#]` |
 | `--quiet` | `flag` | `False` | Suppress compliance banner on `stderr` for clean JSON piping |
@@ -355,7 +357,76 @@ If you installed the project with pip, you can type `recon` instead of the long 
 * **Exit code `2`:** Invalid or missing mandatory CLI flag, or a value out of range (for example a port outside 1-65535, or a timeout of 0 or less).
 * **Exit code `130`:** Operator `SIGINT` (`Ctrl+C`) termination.
 
-## 6. When something goes wrong
+## 6. The settings file
+
+Most limits and defaults can be changed in one plain text file, `settings.ini`, in the main folder of the project. Open it in any text editor, change a value, save it and start the program again. The file is optional. If you delete it, the built-in values are used, and they are the same as the ones in the shipped file. Lines that start with `#` are comments that explain each setting.
+
+### 6.1 Example: letting the test player stay for 3 hours
+
+Three hours is 10800 seconds. Two settings are involved, because the web page has a safety limit on top of the default.
+
+```ini
+[limits]
+max_duration_seconds = 10800
+
+[defaults]
+duration = 10800
+```
+
+The first one raises the longest session the web page accepts. The second one makes 10800 the default, so you don't have to type it each time. On the command line, only `duration` matters, because the command line has no upper limit of its own. The highest value the file accepts is 86400 (24 hours). A server can still kick the test player out earlier, for example for being idle or by an anti-bot plugin, and the report says why the session ended.
+
+### 6.2 Where the program looks for it
+
+1. The file you name with `--config`, for example `python3 boot.py --config my-settings.ini` or `recon --config my-settings.ini --host 127.0.0.1 --mode ping`.
+2. The file named by the `RECON_CONFIG` environment variable.
+3. `settings.ini` in the folder you started the program from.
+4. `settings.ini` in the main folder of the project, next to `boot.py`.
+
+If you installed the project with pip, there is no project folder, so use the third place (your current folder) or one of the first two. When the web page starts, it prints which file it loaded.
+
+### 6.3 Mistakes are never ignored
+
+A typo in a section or setting name, a value that is not a number, or a number outside the allowed range stops the program with a message that names the setting. For example, `max_durtion_seconds` gives `unknown setting max_durtion_seconds in [limits]. Did you mean max_duration_seconds?`, and the command line exits with code 2.
+
+### 6.4 What can't be changed here
+
+Some safety measures are fixed on purpose. The web page only listens on `127.0.0.1`, it always asks you to confirm that you own the server or have permission, it always checks its secret token and the host and origin of every request, and it never saves the RCON password. The size of one request to the page is fixed as well.
+
+### 6.5 All settings
+
+Every setting, its default and what it accepts. The file has the same list with comments.
+
+| Section | Name | Default | Accepts | What it does |
+|---|---|---|---|---|
+| `[defaults]` | `port` | `25565` | 1 to 65535 | Game port of the server. |
+| `[defaults]` | `rcon_port` | `25575` | 1 to 65535 | RCON port of the server. |
+| `[defaults]` | `timeout` | `5` | 0.1 to 3600 | Seconds to wait for the server to answer. |
+| `[defaults]` | `username` | `AuditNode` | 1 to 16 letters, digits or underscores | Name of the test player. |
+| `[defaults]` | `protocol_version` | `auto` | see description | Version of the test player: `auto`, a protocol number or a version such as `1.16.5`. |
+| `[defaults]` | `duration` | `30` | 1 to 86400 | Seconds the test player stays connected. |
+| `[defaults]` | `diagnostics` | `false` | true or false | Print the session report after a test player run. |
+| `[defaults]` | `quiet` | `false` | true or false | Hide the banner at the start of command line runs. |
+| `[limits]` | `max_timeout_seconds` | `60` | 1 to 3600 | Longest timeout the web page accepts. |
+| `[limits]` | `max_duration_seconds` | `120` | 1 to 86400 | Longest test player session the web page accepts. |
+| `[limits]` | `max_command_chars` | `1000` | 1 to 10000 | Longest console command the web page accepts. |
+| `[limits]` | `max_password_chars` | `256` | 1 to 1024 | Longest RCON password the web page accepts. |
+| `[limits]` | `max_output_lines` | `5000` | 100 to 1000000 | How many output lines one run keeps. Extra lines are cut off. |
+| `[limits]` | `max_line_chars` | `100000` | 100 to 1000000 | How many characters one output line keeps. |
+| `[limits]` | `keep_jobs` | `10` | 1 to 100 | How many finished runs the page remembers. |
+| `[web]` | `port` | `8765` | 1 to 65535 | Port of the web page. If it is busy, a free one is used. |
+| `[web]` | `open_browser` | `true` | true or false | Open the browser by itself when the page starts. |
+| `[chat]` | `show_player_chat` | `true` | true or false | Show chat from players. |
+| `[chat]` | `show_system_chat` | `true` | true or false | Show messages from the server (joins, leaves, announcements). |
+| `[chat]` | `show_disguised_chat` | `true` | true or false | Show chat sent by commands such as `/say` or `/tellraw`. |
+| `[chat]` | `show_plain_chat` | `true` | true or false | Show chat from servers older than 1.19. |
+| `[chat]` | `show_kind_label` | `true` | true or false | Put the kind in front of each line, like `(player)`. |
+| `[chat]` | `show_undecoded` | `true` | true or false | Show a line for packets that could not be decoded. |
+| `[chat]` | `timestamps` | `false` | true or false | Put the time in front of each line. |
+| `[output]` | `show_keep_alives` | `true` | true or false | Show a line each time the test player answers a keep-alive. |
+| `[diagnostics]` | `top_packets` | `12` | 1 to 100 | How many of the most common packets the report lists. |
+| `[diagnostics]` | `max_undecoded_samples` | `5` | 0 to 50 | How many undecoded chat packets get a preview in the report. |
+
+## 7. When something goes wrong
 
 If the window says Python was not found, install Python 3.10 or newer. The window prints the right command for your system. If the page does not open by itself, type `http://127.0.0.1:8765/` into your browser. When that port is already in use, the window shows the address it picked instead.
 
@@ -363,26 +434,26 @@ If the status works but the server details do not, the server probably has query
 
 If the test player says the server wants authentication, the server runs with `online-mode=true`. The test player cannot join those servers, and that is on purpose. If it says your version is not supported, choose the version yourself in the page, or run `python3 -m recon.cli --list-versions` (`py -m recon.cli --list-versions` on Windows) to see which ones are known.
 
-## 7. Limits and test status
+## 8. Limits and test status
 
 Please read this before relying on the tool.
 
-### 7.1 What has and has not been tested
+### 8.1 What has and has not been tested
 
 * **Automated tests use fake servers only.** The test suite (`tests/test_protocols.py`) starts small imitation servers on `127.0.0.1` that were written from the published protocol specifications. They prove the code follows those specifications. They do **not** prove it works against every real server.
 * **No mode has been verified against a real Minecraft server by the authors.** This applies to `ping`, `query`, `rcon` and `ghost` alike. Treat the first run against your own server as the real test, and open an issue if something is different.
 * **Python versions:** The code is written for Python `3.10+`. CI runs `3.10` through `3.15` on Linux, macOS and Windows.
 
-### 7.2 Minecraft version support
+### 8.2 Minecraft version support
 
 | Mode | Version dependence | Status |
 | :--- | :--- | :--- |
 | `ping` | Version independent. | Expected to work on any Java Edition server. |
 | `query` | Version independent. Needs `enable-query=true` in `server.properties` and an open UDP port. | Expected to work on any server that has query enabled. |
 | `rcon` | Version independent. Needs `enable-rcon=true` and an RCON password. | Expected to work on any server that has RCON enabled. |
-| `ghost` | **Version specific**, because packet IDs change between releases. | Protocols `47` (1.8) to `775` (26.1), 46 in total (see section 9.4). Every other `--protocol-version` is rejected before connecting. |
+| `ghost` | **Version specific**, because packet IDs change between releases. | Protocols `47` (1.8) to `775` (26.1), 46 in total (see section 10.4). Every other `--protocol-version` is rejected before connecting. |
 
-### 7.3 Limits of the test player (`ghost` mode)
+### 8.3 Limits of the test player (`ghost` mode)
 
 * **Offline-mode servers only.** The target must have `online-mode=false`. Servers that require Mojang authentication reply with an Encryption Request, and the client stops with `OnlineModeRequiredError`. It does not implement encryption or authentication.
 * **Unsupported versions:** Minecraft 1.7.x (protocols `4` and `5`), 1.9.1, 1.14.2, 26.2, 26.3 and all snapshots have no packet table, although their names are known (`recon --list-versions` marks them). Supporting one means adding a row to `source/recon/protocols/ghost_profile_data.py`.
@@ -391,20 +462,20 @@ Please read this before relying on the tool.
 * **Listening window.** Sessions end after `--duration` seconds. If the server sends nothing for longer than `--timeout`, the session stops with a timeout error (exit code `1`).
 * **Automatic detection can be wrong behind proxies.** Proxies and multi-version plugins may report a different protocol number than the server behind them. If login fails, pass `--protocol-version` explicitly.
 
-### 7.4 Other limitations
+### 8.4 Other limitations
 
 * **Java Edition only.** Bedrock Edition uses different protocols and is not supported.
 * **Addressing.** The UDP `query` mode is IPv4 only. The TCP modes (`ping`, `rcon`, `ghost`) accept IPv4 or IPv6. SRV record lookups (`_minecraft._tcp`) are not performed, so use the real host and port.
 * **`tps` is not a vanilla command.** It exists only on Paper, Spigot and compatible servers.
 * **Legal responsibility stays with you.** Use the tool only on servers you own or have written permission to test. See [COPYING.md](./COPYING.md).
 
-### 7.5 Test layers
+### 8.5 Test layers
 
 * **Fast tests (every push and pull request):** the loopback suite in `tests/`, a lint and type check (`ruff`, `mypy`), a coverage check that fails below 80 percent, and a build of the package that is installed and smoke tested in a clean environment.
 * **Real server test (manual):** the `Real server integration test` workflow starts a disposable offline-mode server in Docker and runs `ping`, `query`, `rcon` and `ghost` against it. It only runs when you start it from the Actions tab, so ordinary CI does not depend on Docker. It has not been run yet, so the first run may need small fixes.
 * **Testing safely on your own machine:** to try the tool without touching anyone else's server, run your own local server with the same settings the workflow uses (`online-mode=false`, query and RCON enabled) and point the tool at `127.0.0.1`.
 
-### 7.6 Security notes
+### 8.6 Security notes
 
 * **RCON password.** The password is never printed, logged or included in error messages. Prefer the `MC_RCON_PASSWORD` environment variable to `--password`.
 * **Timeouts and retries.** Every connection has a timeout (default 5 seconds). There are no automatic retries on purpose, so a failing target is never hit repeatedly.
@@ -414,17 +485,20 @@ Please read this before relying on the tool.
 
 ---
 
-## 8. Project layout
+## 9. Project layout
 
 - **source**
   - **recon** - core Python package (PEP 420)
     - `cli.py` - argument parser, validation & dispatch entry point
     - `gui.py` - local web interface server (`recon-gui`)
+    - `settings.py` - reads `settings.ini` (the table of every setting, its default and its limits)
     - **web** - the page the web interface shows (`index.html`, `style.css`, `app.js`, `favicon.svg`)
     - `exceptions.py` - structured exception hierarchy (`ReconError`, etc.)
     - **utils**
       - `varint.py` - Base-128 VarInt, `recv_exact` & UUID v3 generators
       - `versions.py` - protocol number <-> Minecraft version name lookup
+      - `nbt.py` - reader for the binary text format used by newer versions
+      - `text.py` - turns chat text components into plain text
     - **protocols**
       - `ping.py` - TCP `0x00` Status + `0x01` RTT latency
       - `query.py` - UDP `0xFEFD` GameSpy4 challenge/response
@@ -453,8 +527,10 @@ Please read this before relying on the tool.
   - `test_protocols.py` - loopback tests for ping, query, RCON, ghost and CLI validation
   - `test_gui.py` - tests for the web interface server, its safety checks and its files
   - `test_boot.py` - tests for the launcher: system detection, install hints and the launcher files
+  - `test_settings.py` - tests for the settings file and everything that reads it
   - `test_chat.py` - tests for the NBT and text readers, the chat decoder, diagnostics and RCON presets
 
+- `settings.ini` - optional settings (limits and defaults), see section 6
 - `boot.py` - starts the web interface on any system (detects the system and checks Python)
 - `boot-windows.bat`, `boot-mac.command`, `boot-linux.sh` - double-click launchers that call `boot.py`
 - `pyproject.toml` - build spec & CLI entry point
@@ -466,9 +542,9 @@ Please read this before relying on the tool.
 - `LICENSE` - authorized use license
 - `.editorconfig`, `.gitattributes`, `.gitignore` - other necessary files
 
-## 9. How the protocols work
+## 10. How the protocols work
 
-### 9.1 Protocol 1: TCP server list ping (`source/recon/protocols/ping.py`)
+### 10.1 Protocol 1: TCP server list ping (`source/recon/protocols/ping.py`)
 
 Every modern Minecraft TCP packet is prefixed with a Base-128 `VarInt` specifying the exact byte length of `Packet ID + Payload`. All socket reads use `recv_exact()` to reassemble fragmented TCP segments deterministically.
 
@@ -484,7 +560,7 @@ The CLI adds one readable field to the server's reply, `version.minecraft_versio
 
 ---
 
-### 9.2 Protocol 2: UDP GameSpy4 full stat query (`source/recon/protocols/query.py`)
+### 10.2 Protocol 2: UDP GameSpy4 full stat query (`source/recon/protocols/query.py`)
 
 GameSpy4 runs over unconnected UDP datagrams (`SOCK_DGRAM`) and enforces a stateless token handshake:
 
@@ -502,7 +578,7 @@ GameSpy4 runs over unconnected UDP datagrams (`SOCK_DGRAM`) and enforces a state
 
 ---
 
-### 9.3 Protocol 3: TCP Source RCON (`source/recon/protocols/rcon.py`)
+### 10.3 Protocol 3: TCP Source RCON (`source/recon/protocols/rcon.py`)
 
 Valve Source RCON frames integers in **32-bit signed little-endian** (`<i`) byte order:
 
@@ -516,7 +592,7 @@ Valve Source RCON frames integers in **32-bit signed little-endian** (`<i`) byte
 
 ---
 
-### 9.4 Protocol 4: offline play-state headless client (`source/recon/protocols/ghost.py`)
+### 10.4 Protocol 4: offline play-state headless client (`source/recon/protocols/ghost.py`)
 
 1. **Login handshake:** Transmits `Handshake (0x00)` with `Next State = 2`, followed by `Login Start (0x00)`. The bytes after the username depend on the version. For `protocol_version >= 764` (Minecraft 1.20.2+), `ghost.py` appends a 16-byte MD5 UUID v3 (`OfflinePlayer:<username>`). Versions 1.19 - 1.20.1 send "no signature / no UUID" flags instead.
 2. **Zlib compression negotiation (`0x03`):** When the server transmits `Set Compression (0x03)`, all subsequent frames switch to RFC 1950 `zlib` framing:
@@ -554,7 +630,7 @@ Valve Source RCON frames integers in **32-bit signed little-endian** (`<i`) byte
 >
 > **Adding a version:** append one row to `source/recon/protocols/ghost_profile_data.py` (the layout is explained at the top of that file) and add the version to the tests. No other file needs to change unless the new release alters the login sequence itself.
 
-### 9.5 Adding support for a new Minecraft version
+### 10.5 Adding support for a new Minecraft version
 
 Two files hold the data, and both are plain tables. Nothing else needs to change unless the new release alters the login or configuration steps.
 
@@ -587,7 +663,7 @@ Two files hold the data, and both are plain tables. Nothing else needs to change
 
 A protocol number without a row is rejected before any connection is made, so a wrong guess can't silently misread packets. Then add the version to the tests in `tests/test_protocols.py`.
 
-### 9.6 Chat decoding
+### 10.6 Chat decoding
 
 `source/recon/protocols/chat.py` reads the chat packets the test player receives in the play state.
 
@@ -601,11 +677,11 @@ Signed chat is only signed, not encrypted, so its text can be read and gets deco
 
 Player chat changed its layout several times, so the decoder tries the plausible layouts and keeps the first one that gives clean text. When nothing fits, the packet is printed as `packet 0xNN (N bytes, not decoded)` and the diagnostics show the readable text inside it. Text that arrives as NBT (1.20.3 and newer) is read by `source/recon/utils/nbt.py`. It never trusts a length from the network: depth, element counts and total size are capped, and every problem is reported as a framing error. `source/recon/utils/text.py` turns the result into plain text, fills in the common message keys (chat, joined, left and so on) and shows an unknown key as the key followed by its arguments, so nothing is lost silently.
 
-### 9.7 Session diagnostics
+### 10.7 Session diagnostics
 
 `--diagnostics` (or the checkbox in the web page) prints a report after a test player session. Every line starts with `[#]`, so the page and scripts can pick the report out of the normal output. It shows the protocol and version, a timeline (connected, login success, play state), the compression threshold, how many packets and bytes arrived and how many per second, how many keep-alives were echoed and how often they came, how many chat packets were decoded or not, why the session ended, the most common packets (state, ID, count, bytes and a name such as "keep alive" or "system chat"), and for undecoded chat a hex preview with any readable text. It doesn't touch the network.
 
-### 9.8 RCON quick checks
+### 10.8 RCON quick checks
 
 `--preset` (or the Quick check list in the page) runs a ready-made set of commands on one RCON connection. Every command only reads information and none changes the world, players or settings. Which commands exist depends on the server software: `tps` and `plugins` exist on Paper and Spigot, `forge tps` on Forge. A server that doesn't know a command answers with its own error text, and the answer is shown as it is.
 
@@ -617,11 +693,11 @@ Player chat changed its layout several times, so the decoder tries the plausible
 | `players` | `list uuids`, `whitelist list`, `banlist players`, `banlist ips` |
 | `world` | `seed`, `time query daytime`, `time query gametime`, `time query day`, `difficulty`, `worldborder get` |
 
-### 9.9 Where the version data comes from
+### 10.9 Where the version data comes from
 
 Packet IDs and version names come from the community project [minecraft-data](https://github.com/PrismarineJS/minecraft-data). Every profile passes a full login, configuration and play test against a fake local server, and none has been run against a real Minecraft server by the authors.
 
-## 10. Using it from Python code
+## 11. Using it from Python code
 
 ```python
 from recon.exceptions import ReconError
@@ -653,9 +729,9 @@ except ReconError as err:
     print(f"Audit exception: {err}")
 ```
 
-## 11. Other tools
+## 12. Other tools
 
-### 11.1 Audit script (`scripts/run_recon.py`)
+### 12.1 Audit script (`scripts/run_recon.py`)
 
 Runs ping, query and (if a password is given) RCON against one host and prints a summary. It is configured through environment variables:
 
@@ -678,12 +754,12 @@ $env:PYTHONPATH="source"; $env:MC_TARGET_HOST="127.0.0.1"; py scripts/run_recon.
 
 Exit code `0` means at least one attempted probe succeeded, `1` means every attempted probe failed, and `2` means an invalid port in the environment.
 
-### 11.2 Packet inspector (`tools/packet_inspector.py`)
+### 12.2 Packet inspector (`tools/packet_inspector.py`)
 
 Prints the exact bytes of the packets the tool sends (handshake, GameSpy4 challenge, RCON login) as hex and text, so you can compare them with the protocol documents. It never connects to anything. `PYTHONPATH=source python3 tools/packet_inspector.py` shows them (on Windows PowerShell, `$env:PYTHONPATH="source"; py tools/packet_inspector.py`), `--host` and `--port` change the sample address, and `--self-test` runs the silent checks that CI uses.
 
 ---
-## 12. References
+## 13. References
 
 * **Minecraft modern TCP protocol & Base-128 VarInt specification:** [wiki.vg/Protocol](https://wiki.vg/Protocol)
 * **Server list ping (`0x00` status & `0x01` ping/pong specification):** [wiki.vg/Server_List_Ping](https://wiki.vg/Server_List_Ping)
