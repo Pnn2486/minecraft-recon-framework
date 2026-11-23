@@ -1,6 +1,4 @@
-"""
-Reads the chat packets the test player gets in the game, visit README section 10.6 to see more info
-"""
+"""Reads the chat packets the test player gets in the game, how it works is in README section 10.6"""
 
 import re
 import struct
@@ -35,7 +33,7 @@ def _opaque_in_table_order(protocol: int) -> list[int]:
 
 
 def packet_kinds(profile: GhostProfile) -> dict[int, str]:
-    """Maps every chat packet ID of a profile to its kind."""
+    """Maps every chat packet ID of a profile to its kind"""
     kinds: dict[int, str] = {}
     json_kind = "chat" if profile.protocol < 759 else "system"
     for pkt_id in profile.play_chat_json_ids:
@@ -101,7 +99,7 @@ def _clean_message(text: str) -> str:
 
 
 def _decode_simple(profile: GhostProfile, kind: str, data: bytes) -> ChatMessage:
-    """Plain JSON chat (before 1.19) and system chat (1.19 and newer): the component comes first."""
+    """Plain JSON chat (before 1.19) and system chat (1.19 and newer): the component comes first"""
     reader = _Reader(data, profile.text_is_json)
     return ChatMessage(kind, reader.component())
 
@@ -115,7 +113,7 @@ def _decode_disguised(profile: GhostProfile, data: bytes) -> ChatMessage:
 
 
 def _player_tail(reader: _Reader) -> str:
-    """The part after the signed message. Only the sender name matters, so any failure is ignored."""
+    """The part after the signed message. Only the sender name matters, so any failure is ignored"""
     for _ in range(reader.varint()):  # previous messages
         if reader.varint() == 0:
             reader.take(SIGNATURE_BYTES)
@@ -148,7 +146,7 @@ def _player_candidate(profile: GhostProfile, data: bytes, global_index: bool) ->
 
 
 def _decode_player_legacy(profile: GhostProfile, data: bytes) -> ChatMessage:
-    """1.19 to 1.19.2: signed content, optional unsigned content, type, sender UUID, sender name."""
+    """1.19 to 1.19.2: signed content, optional unsigned content, type, sender UUID, sender name"""
     reader = _Reader(data, True)
     signed_text = json_text_to_plain(reader.string())
     unsigned = ""
@@ -176,7 +174,7 @@ def _decode_player(profile: GhostProfile, data: bytes) -> ChatMessage:
 
 
 def decode_chat_packet(profile: GhostProfile, pkt_id: int, data: bytes) -> ChatMessage | None:
-    """Returns the decoded message, or None when the packet cannot be read (the caller then reports it as not decoded)."""
+    """Returns the decoded message, or None when the packet cannot be read (the caller then reports it as not decoded)"""
     kind = packet_kinds(profile).get(pkt_id)
     if kind is None:
         return None
@@ -195,7 +193,7 @@ def decode_chat_packet(profile: GhostProfile, pkt_id: int, data: bytes) -> ChatM
 
 
 def readable_strings(data: bytes, minimum: int = 4, limit: int = 6) -> list[str]:
-    """Runs of readable characters inside a packet. A hint for packets that could not be decoded."""
+    """Runs of readable characters inside a packet. A hint for packets that could not be decoded"""
     text = data.decode("utf-8", errors="ignore")
     runs = re.findall(rf"[^\x00-\x1f\x7f]{{{minimum},}}", text)
     return [run[:120] for run in runs[:limit]]
