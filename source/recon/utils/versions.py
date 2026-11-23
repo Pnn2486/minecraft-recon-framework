@@ -1,4 +1,4 @@
-"""Minecraft version names for each protocol number, so output says 1.16.5 instead of 754"""
+"""Minecraft version names for each protocol number, so output says version names like 1.16.5 instead of 754"""
 
 VERSION_NAMES: dict[int, tuple[str, ...]] = {
     4: ('1.7.2', '1.7.4', '1.7.5'),
