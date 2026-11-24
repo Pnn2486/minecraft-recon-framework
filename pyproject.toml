@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,8 @@ version = "1.1.0"
 description = "Zero-dependency Python network reconnaissance, wire-protocol dissection, and remote administration framework for Minecraft Java Edition servers."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "LicenseRef-Authorized-Use"
+license-files = ["LICENSE", "COPYING.md"]
 authors = [
     { name = "Pnn2486" }
 ]
@@ -16,9 +17,9 @@ keywords = ["minecraft", "network-programming", "rcon", "gamespy4", "protocol-an
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
+    "Environment :: Web Environment",
     "Intended Audience :: Developers",
     "Intended Audience :: System Administrators",
-    "License :: Other/Proprietary License",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
     "Operating System :: Microsoft :: Windows",
@@ -36,6 +37,44 @@ dependencies = []
 [project.scripts]
 recon = "recon.cli:main"
 
+[project.gui-scripts]
+recon-gui = "recon.gui:main"
+
 [tool.setuptools.packages.find]
 where = ["source"]
 namespaces = true
+
+[tool.setuptools.package-data]
+"recon.web" = ["*.html", "*.css", "*.js", "*.svg"]
+
+[project.optional-dependencies]
+# Runtime stays dependency free; these are only for developing and checking the project.
+dev = [
+    "build>=1.2",
+    "coverage>=7.6",
+    "mypy>=1.10",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP"]
+# Long lines are allowed on purpose: statements are kept on one line (see .editorconfig).
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["source", "tools", "scripts"]
+mypy_path = "source"
+namespace_packages = true
+explicit_package_bases = true
+
+[tool.coverage.run]
+source = ["source/recon"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

@@ -1,6 +1,5 @@
 """
-Base-128 VarInt, UTF-8 String Framing, Deterministic Socket Readers,
-and Offline UUID v3 Generation for Minecraft Wire Protocols.
+Base-128 VarInt, UTF-8 string framing, deterministic socket readers, and offline UUID v3 generation
 """
 
 import hashlib
@@ -9,10 +8,7 @@ from recon.exceptions import ProtocolFramingError
 
 
 def recv_exact(sock: socket.socket, num_bytes: int) -> bytes:
-    """
-    Deterministically reads exactly `num_bytes` from a TCP stream socket.
-    Prevents partial-read corruption when packets fragment across TCP segments.
-    """
+    """Reads exactly num_bytes from a socket, even when the data arrives in pieces"""
     if num_bytes < 0:
         raise ProtocolFramingError(f"Negative byte count requested: {num_bytes}")
     chunks: list[bytes] = []
@@ -29,10 +25,7 @@ def recv_exact(sock: socket.socket, num_bytes: int) -> bytes:
 
 
 def pack_varint(val: int) -> bytes:
-    """
-    Serializes a 32-bit signed or unsigned integer into a 1-to-5 byte Base-128 VarInt.
-    Negative values are encoded using two's complement 32-bit bitmasking.
-    """
+    """Turns an integer into a 1 to 5 byte VarInt"""
     if val < 0:
         val = (1 << 32) + val
     out = bytearray()
@@ -50,13 +43,13 @@ def pack_varint(val: int) -> bytes:
 
 
 def pack_string(text: str) -> bytes:
-    """Serializes a UTF-8 string prefixed with its byte length as a VarInt."""
+    """Serializes a UTF-8 string prefixed with its byte length as a VarInt"""
     encoded = text.encode("utf-8")
     return pack_varint(len(encoded)) + encoded
 
 
 def read_varint_sock(sock: socket.socket) -> int:
-    """Reads and decodes a single Base-128 VarInt directly from a TCP socket."""
+    """Reads and decodes a single Base-128 VarInt directly from a TCP socket"""
     val = 0
     shift = 0
     while True:
@@ -74,10 +67,7 @@ def read_varint_sock(sock: socket.socket) -> int:
 
 
 def read_varint_bytes(buffer: bytes, offset: int = 0) -> tuple[int, int]:
-    """
-    Decodes a Base-128 VarInt from `buffer` starting at `offset`.
-    Returns `(decoded_int, next_offset)`.
-    """
+    """Reads a VarInt from buffer at offset, gives (value, next offset)"""
     val = 0
     shift = 0
     idx = offset
@@ -99,10 +89,7 @@ def read_varint_bytes(buffer: bytes, offset: int = 0) -> tuple[int, int]:
 
 
 def read_string_bytes(buffer: bytes, offset: int = 0) -> tuple[str, int]:
-    """
-    Decodes a VarInt-prefixed UTF-8 string from `buffer` starting at `offset`.
-    Returns `(decoded_string, next_offset)`.
-    """
+    """Reads a VarInt-prefixed UTF-8 string from buffer at offset, gives (text, next offset)"""
     str_len, idx = read_varint_bytes(buffer, offset)
     if str_len < 0 or idx + str_len > len(buffer):
         raise ProtocolFramingError(f"Invalid string byte length ({str_len}) at offset {offset}.")
@@ -111,11 +98,8 @@ def read_string_bytes(buffer: bytes, offset: int = 0) -> tuple[str, int]:
 
 
 def offline_player_uuid_bytes(username: str) -> bytes:
-    """
-    Computes the 16-byte offline-mode player UUID (UUID v3 MD5 namespace)
-    matching `UUID.nameUUIDFromBytes(("OfflinePlayer:" + username).getBytes(UTF_8))` in Java.
-    """
-    digest = bytearray(hashlib.md5(f"OfflinePlayer:{username}".encode("utf-8")).digest())
+    """The 16-byte UUID an offline-mode server gives a player name (same as Java's nameUUIDFromBytes)"""
+    digest = bytearray(hashlib.md5(f"OfflinePlayer:{username}".encode()).digest())
     digest[6] = (digest[6] & 0x0F) | 0x30
     digest[8] = (digest[8] & 0x3F) | 0x80
     return bytes(digest)

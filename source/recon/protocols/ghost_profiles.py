@@ -1,13 +1,4 @@
-"""
-Per-version packet tables for the headless ghost client.
-
-Packet IDs change between Minecraft releases, so each supported protocol number maps to one `GhostProfile`. A protocol number without a profile is rejected before any connection is made, instead of silently misreading packets.
-
-The raw numbers live in `ghost_profile_data.py`. To support a new release, append a row there; nothing in this file or in `ghost.py` needs to change unless the new release alters the login or configuration sequence itself.
-
-Status: every profile is exercised by the loopback mock servers in tests/test_protocols.py.
-None has been run against a real server by the authors. Treat them as "implemented from published protocol data", not "field tested".
-"""
+"""Packet IDs per Minecraft version for the test player, the numbers are in ghost_profile_data.py"""
 
 from dataclasses import dataclass
 
@@ -17,10 +8,10 @@ from recon.utils.versions import describe, version_range
 
 
 class UnsupportedProtocolError(ReconError):
-    """Raised when --protocol-version has no ghost profile."""
+    """Raised when --protocol-version has no ghost profile"""
 
 
-# How the Login Start packet is built after the username:
+# How the login start packet is built after the username:
 #   name           nothing else                         (1.8 - 1.18.2)
 #   name_sig       "no signature data"                  (1.19)
 #   name_sig_uuid  "no signature data", "no UUID"       (1.19.1 - 1.19.2)
@@ -102,12 +93,12 @@ PROFILES: dict[int, GhostProfile] = {row[0]: _build(row) for row in ROWS}
 
 
 def supported_versions() -> str:
-    """Human-readable list such as '1.8 - 1.8.9 (47), 1.9 (107), ...'."""
+    """Human-readable list such as '1.8 - 1.8.9 (47), 1.9 (107), ...'"""
     return ", ".join(f"{p.name} ({num})" for num, p in sorted(PROFILES.items()))
 
 
 def get_profile(protocol_version: int) -> GhostProfile:
-    """Returns the profile for `protocol_version` or raises UnsupportedProtocolError."""
+    """Returns the profile for `protocol_version` or raises UnsupportedProtocolError"""
     try:
         return PROFILES[protocol_version]
     except KeyError:

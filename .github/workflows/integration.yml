@@ -1,0 +1,71 @@
+name: Real server integration test
+
+# Manual only: starts a real Minecraft server in Docker and runs every mode against it.
+# It never runs on pushes or pull requests, so ordinary CI stays fast and does not depend on Docker Hub.
+on:
+  workflow_dispatch:
+    inputs:
+      minecraft_version:
+        description: "Minecraft server version to start"
+        required: true
+        default: "1.21.1"
+
+permissions:
+  contents: read
+
+jobs:
+  real-server:
+    name: Minecraft ${{ inputs.minecraft_version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MC_VERSION: ${{ inputs.minecraft_version }}
+      MC_RCON_PASSWORD: ci-only-disposable-password
+      PYTHONPATH: source
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Start a disposable offline-mode server
+        run: |
+          docker run -d --name mc \
+            -p 25565:25565 -p 25565:25565/udp -p 25575:25575 \
+            -e EULA=TRUE -e TYPE=VANILLA -e VERSION="$MC_VERSION" \
+            -e ONLINE_MODE=FALSE -e ENABLE_QUERY=true \
+            -e ENABLE_RCON=true -e RCON_PASSWORD="$MC_RCON_PASSWORD" \
+            -e MEMORY=1G itzg/minecraft-server
+
+      - name: Wait until the server is ready
+        run: |
+          for i in $(seq 1 90); do
+            logs=$(docker logs mc 2>&1)
+            if grep -q 'Done (' <<< "$logs"; then exit 0; fi
+            sleep 2
+          done
+          docker logs mc | tail -50
+          exit 1
+
+      - name: Server list ping
+        run: python -m recon --quiet --host 127.0.0.1 --mode ping
+
+      - name: GameSpy4 query
+        run: python -m recon --quiet --host 127.0.0.1 --mode query
+
+      - name: RCON (password from the environment)
+        run: python -m recon --quiet --host 127.0.0.1 --mode rcon --cmd list
+
+      - name: Ghost client (version detected automatically)
+        run: python -m recon --quiet --host 127.0.0.1 --mode ghost --duration 10
+
+      - name: Show server log
+        if: always()
+        run: docker logs mc | tail -80
+
+      - name: Stop the server
+        if: always()
+        run: docker rm -f mc

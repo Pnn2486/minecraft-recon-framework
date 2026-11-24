@@ -42,11 +42,14 @@ $env:PYTHONPATH="source"
 
 ## Pre-commit verification
 
-Run these from the repository root before opening a pull request, and make sure they pass:
+Run these from the repository root before opening a pull request, and make sure they pass. The last three are the lint and type checks that CI also runs:
 
 ```bash
 python3 -m unittest discover -s tests -v
 python3 tools/packet_inspector.py --self-test
+python3 -m pip install ruff mypy
+ruff check .
+mypy
 ```
 
 On Windows, use `python` instead of `python3`.

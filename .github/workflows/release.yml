@@ -1,0 +1,50 @@
+name: Release
+
+# Runs when a version tag such as v1.2.0 is pushed. It does not publish to PyPI.
+on:
+  push:
+    tags: [ "v*.*.*" ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check that the tag matches the package version
+        run: |
+          version=$(grep -m1 '^version = ' pyproject.toml | cut -d'"' -f2)
+          if [ "v$version" != "$TAG" ]; then
+            echo "Tag $TAG does not match pyproject.toml version $version" >&2
+            exit 1
+          fi
+
+      - name: Run the test suite
+        env:
+          PYTHONPATH: source
+        run: python -m unittest discover -s tests
+
+      - name: Build source distribution and wheel
+        run: |
+          python -m pip install build
+          python -m build
+
+      - name: Create the GitHub release, or attach the files to the one made in the web page
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "$TAG" --generate-notes
+          fi

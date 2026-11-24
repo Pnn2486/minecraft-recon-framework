@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""
-Wire-Frame Hexadecimal and VarInt Diagnostic Inspector.
-Generates and verifies raw byte frames for TCP Ping, UDP GameSpy4, and Source RCON.
-
-Usage:
-    PYTHONPATH=source python3 tools/packet_inspector.py
-    PYTHONPATH=source python3 tools/packet_inspector.py --self-test
-"""
+"""Shows the exact bytes the tool sends, as hex and text (README section 12.2)"""
 
 import argparse
 import struct
@@ -20,7 +13,7 @@ from recon.utils.varint import (
 
 
 def format_hexdump(data: bytes, width: int = 16) -> str:
-    """Formats a raw byte sequence into an aligned 16-byte Hex + ASCII table."""
+    """Formats a raw byte sequence into an aligned 16-byte Hex + ASCII table"""
     lines = []
     for offset in range(0, len(data), width):
         chunk = data[offset : offset + width]
@@ -31,25 +24,19 @@ def format_hexdump(data: bytes, width: int = 16) -> str:
 
 
 def build_handshake_frame(host: str, port: int, protocol: int = 767, next_state: int = 1) -> bytes:
-    """Constructs a complete length-prefixed TCP 0x00 Handshake wire frame."""
-    payload = (
-        pack_varint(0x00)
-        + pack_varint(protocol)
-        + pack_string(host)
-        + struct.pack(">H", port)
-        + pack_varint(next_state)
-    )
+    """Constructs a complete length-prefixed TCP 0x00 Handshake wire frame"""
+    payload = pack_varint(0x00) + pack_varint(protocol) + pack_string(host) + struct.pack(">H", port) + pack_varint(next_state)
     return pack_varint(len(payload)) + payload
 
 
 def build_gamespy4_challenge_frame(session_id: int = 0x01020304) -> bytes:
-    """Constructs a 7-byte UDP GameSpy4 0xFEFD Handshake Challenge datagram."""
+    """Constructs a 7-byte UDP GameSpy4 0xFEFD handshake challenge datagram"""
     masked_session = session_id & 0x0F0F0F0F
     return struct.pack(">HBI", 0xFEFD, 0x09, masked_session)
 
 
 def build_rcon_auth_frame(req_id: int, password: str) -> bytes:
-    """Constructs a signed little-endian TCP Source RCON Type 3 Auth frame."""
+    """Constructs a signed little-endian TCP Source RCON Type 3 Auth frame"""
     body = password.encode("utf-8") + b"\x00\x00"
     size = 4 + 4 + len(body)
     return struct.pack("<iii", size, req_id, 3) + body
@@ -70,21 +57,21 @@ def run_inspector(host: str, port: int, self_test: bool = False) -> int:
         print("[+] Wire-frame self-test passed: All binary headers verified.")
         return 0
 
-    print("=== [1] TCP 0x00 Status Handshake Frame ===")
-    print(f"  Target Host        : {host}:{port}")
-    print(f"  Total Wire Bytes   : {len(tcp_frame)} bytes (payload {decoded_len} bytes + {payload_offset}-byte VarInt length prefix)")
+    print("=== [1] TCP 0x00 status handshake frame ===")
+    print(f"  Target host        : {host}:{port}")
+    print(f"  Total wire bytes   : {len(tcp_frame)} bytes (payload {decoded_len} bytes + {payload_offset}-byte VarInt length prefix)")
     print(format_hexdump(tcp_frame))
 
-    print("\n=== [2] UDP 0xFEFD GameSpy4 Challenge Frame ===")
-    print(f"  Total Wire Bytes   : {len(udp_frame)} bytes")
+    print("\n=== [2] UDP 0xFEFD GameSpy4 challenge frame ===")
+    print(f"  Total wire bytes   : {len(udp_frame)} bytes")
     print(format_hexdump(udp_frame))
 
-    print("\n=== [3] TCP Source RCON Type 3 Auth Frame (Little-Endian) ===")
-    print(f"  Total Wire Bytes   : {len(rcon_frame)} bytes")
+    print("\n=== [3] TCP Source RCON type 3 auth frame (little-endian) ===")
+    print(f"  Total wire bytes   : {len(rcon_frame)} bytes")
     print(format_hexdump(rcon_frame))
 
-    print("\n=== [4] Offline Player UUID v3 (MD5 'OfflinePlayer:AuditNode') ===")
-    print(f"  Total Wire Bytes   : {len(uuid_bytes)} bytes")
+    print("\n=== [4] Offline player UUID v3 (MD5 'OfflinePlayer:AuditNode') ===")
+    print(f"  Total wire bytes   : {len(uuid_bytes)} bytes")
     print(format_hexdump(uuid_bytes))
     return 0
 

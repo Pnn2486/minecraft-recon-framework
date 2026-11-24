@@ -1,10 +1,11 @@
-"""Command-line interface and dispatch router for minecraft-recon-framework."""
+"""Command-line interface and dispatch router for minecraft-recon-framework"""
 
 import argparse
 import json
 import math
 import os
 import sys
+from recon import settings
 from recon.exceptions import ReconError
 from recon.protocols.ping import mc_status_ping
 from recon.protocols.query import gamespy4_full_query
@@ -64,7 +65,7 @@ def protocol_choice(text: str) -> int | str:
 
 
 class _ListVersions(argparse.Action):
-    """Prints every known Minecraft release with its protocol number and ghost-mode support, then exits."""
+    """Prints every known Minecraft release with its protocol number and ghost-mode support, then exits"""
 
     def __init__(self, option_strings, dest, **kwargs):
         super().__init__(option_strings, dest, nargs=0, default=argparse.SUPPRESS, **kwargs)
@@ -78,7 +79,7 @@ class _ListVersions(argparse.Action):
 
 
 def hostname(text: str) -> str:
-    """A non-empty host name or IP address without spaces or control characters."""
+    """A non-empty host name or IP address without spaces or control characters"""
     value = text.strip()
     if not value or len(value) > 253:
         raise argparse.ArgumentTypeError("host must be 1 to 253 characters long")
@@ -97,27 +98,43 @@ def positive_seconds(text: str) -> float:
     return value
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(cfg: dict | None = None) -> argparse.ArgumentParser:
+    cfg = (cfg or settings.current())["defaults"]
     parser = argparse.ArgumentParser(prog="recon", description="Zero-dependency Minecraft network reconnaissance and protocol auditing framework.")
     parser.add_argument("--version", action="version", version=f"recon {VERSION}")
     parser.add_argument("--list-versions", action=_ListVersions, help="List known Minecraft versions and their protocol numbers, then exit")
+    parser.add_argument("--config", default=None, metavar="FILE", help=f"Settings file to use (default: the {settings.ENV_VAR} variable, or settings.ini in this folder or the project folder)")
     parser.add_argument("--host", type=hostname, required=True, help="Target hostname or IP address (query mode is IPv4 only)")
     parser.add_argument("--mode", choices=["ping", "query", "rcon", "ghost"], required=True, help="Protocol state machine to execute")
-    parser.add_argument("--port", type=port_number, default=25565, help="Target TCP/UDP game port (default: 25565)")
-    parser.add_argument("--rcon-port", type=port_number, default=25575, help="Target TCP RCON port (default: 25575)")
-    parser.add_argument("--timeout", type=positive_seconds, default=5.0, help="Socket timeout in seconds (default: 5.0)")
+    parser.add_argument("--port", type=port_number, default=cfg["port"], help=f"Target TCP/UDP game port (default: {cfg['port']})")
+    parser.add_argument("--rcon-port", type=port_number, default=cfg["rcon_port"], help=f"Target TCP RCON port (default: {cfg['rcon_port']})")
+    parser.add_argument("--timeout", type=positive_seconds, default=cfg["timeout"], help=f"Socket timeout in seconds (default: {cfg['timeout']})")
     parser.add_argument("--password", default=None, help=f"RCON authentication secret (required for --mode rcon). Prefer the {PASSWORD_ENV_VAR} environment variable: command-line arguments are visible to other users and saved in shell history")
     parser.add_argument("--cmd", action="append", default=None, help="Console command for --mode rcon (default: list). Repeat the option to run several commands on one connection")
     parser.add_argument("--preset", choices=sorted(PRESETS), default=None, help="Run a ready-made set of read-only commands with --mode rcon: " + ", ".join(sorted(PRESETS)))
-    parser.add_argument("--username", default="AuditNode", help="Username sent in the login start packet (0x00) for --mode ghost")
-    parser.add_argument("--protocol-version", type=protocol_choice, default=AUTO_PROTOCOL, help='Version for --mode ghost: a protocol number (754), a Minecraft version (1.16.5), or "auto" to detect it from the server (default: auto)')
-    parser.add_argument("--duration", type=positive_int, default=30, help="Session listen TTL in seconds for --mode ghost")
-    parser.add_argument("--diagnostics", action="store_true", help="Print a session report (timeline, packet counts, chat decoding) after --mode ghost")
-    parser.add_argument("--quiet", action="store_true", help="Suppress compliance banner for JSON piping")
+    parser.add_argument("--username", default=cfg["username"], help=f"Username sent in the login start packet (0x00) for --mode ghost (default: {cfg['username']})")
+    parser.add_argument("--protocol-version", type=protocol_choice, default=protocol_choice(str(cfg["protocol_version"])), help=f'Version for --mode ghost: a protocol number (754), a Minecraft version (1.16.5), or "auto" to detect it from the server (default: {cfg["protocol_version"]})')
+    parser.add_argument("--duration", type=positive_int, default=cfg["duration"], help=f"Session listen TTL in seconds for --mode ghost (default: {cfg['duration']})")
+    parser.add_argument("--diagnostics", action="store_true", default=cfg["diagnostics"], help="Print a session report (timeline, packet counts, chat decoding) after --mode ghost")
+    parser.add_argument("--quiet", action="store_true", default=cfg["quiet"], help="Suppress compliance banner for JSON piping")
     return parser
 
 
+def _load_settings(argv: list[str] | None) -> None:
+    """Loads the settings file named by --config, or finds one, unless the caller already did"""
+    early = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    early.add_argument("--config", default=None)
+    explicit = early.parse_known_args(argv)[0].config
+    if explicit or not settings.configured():
+        settings.use_file(explicit)
+
+
 def main(argv: list[str] | None = None) -> int:
+    try:
+        _load_settings(argv)
+    except settings.SettingsError as exc:
+        print(f"[!] {exc}", file=sys.stderr)
+        return 2
     parser = build_parser()
     args = parser.parse_args(argv)
 
