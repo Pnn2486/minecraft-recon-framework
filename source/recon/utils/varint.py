@@ -99,7 +99,7 @@ def read_string_bytes(buffer: bytes, offset: int = 0) -> tuple[str, int]:
 
 def offline_player_uuid_bytes(username: str) -> bytes:
     """The 16-byte UUID an offline-mode server gives a player name (same as Java's nameUUIDFromBytes)"""
-    digest = bytearray(hashlib.md5(f"OfflinePlayer:{username}".encode()).digest())
+    digest = bytearray(hashlib.md5(f"OfflinePlayer:{username}".encode(), usedforsecurity=False).digest())
     digest[6] = (digest[6] & 0x0F) | 0x30
     digest[8] = (digest[8] & 0x3F) | 0x80
     return bytes(digest)
