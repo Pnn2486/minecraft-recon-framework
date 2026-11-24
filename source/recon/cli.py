@@ -158,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.mode == "rcon":
             password = args.password if args.password is not None else os.environ.get(PASSWORD_ENV_VAR, "")
             if not password:
-                print(f"[!] Error: --password or the {PASSWORD_ENV_VAR} environment variable is required when --mode rcon is selected.", file=sys.stderr)
+                print("[!] Error: --password or the MC_RCON_PASSWORD environment variable is required when --mode rcon is selected.", file=sys.stderr)
                 return 2
             commands = list(PRESETS[args.preset]) if args.preset else []
             commands += args.cmd or ([] if args.preset else ["list"])
