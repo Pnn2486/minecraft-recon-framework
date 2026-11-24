@@ -1,18 +1,4 @@
-"""
-Unit tests for binary serialization, Base-128 VarInt boundaries, RCON framing,
-and offline UUID v3 generation.
-
-Run from the repository root (the folder containing source/ and tests/):
-
-    Linux / macOS (bash/zsh) :
-        PYTHONPATH=source python3 -m unittest discover -s tests -v
-
-    Windows (PowerShell):
-        $env:PYTHONPATH="source"; python -m unittest discover -s tests -v
-
-    Windows (CMD):
-        set PYTHONPATH=source && python -m unittest discover -s tests -v
-"""
+"""Tests for VarInt, RCON framing and offline UUIDs"""
 
 
 import struct
