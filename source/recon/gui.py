@@ -24,6 +24,7 @@ STATIC_FILES = {
     "app.js": "text/javascript; charset=utf-8",
     "favicon.svg": "image/svg+xml",
 }
+STATIC_PATHS = {name: WEB_DIR / name for name in STATIC_FILES}  # only these files can be served
 MODES = ("ping", "query", "rcon", "ghost")
 MAX_BODY_BYTES = 16 * 1024  # fixed on purpose, not a setting
 
@@ -317,10 +318,11 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
         elif path.startswith("/static/"):
             name = path[len("/static/") :]
-            if name not in STATIC_FILES:
+            file_path = STATIC_PATHS.get(name)
+            if file_path is None:
                 self._fail(404, "Not found.")
                 return
-            self._send(200, (WEB_DIR / name).read_bytes(), STATIC_FILES[name])
+            self._send(200, file_path.read_bytes(), STATIC_FILES[name])
         elif path.startswith("/api/"):
             if not self._api_ok():
                 self._fail(403, "Missing or wrong token.")
