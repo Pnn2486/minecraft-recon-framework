@@ -18,7 +18,7 @@ jobs:
     outputs:
       matrix: ${{ steps.read.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: read
         run: echo "matrix=$(jq -c . tests/distros.json)" >> "$GITHUB_OUTPUT"
 
@@ -31,7 +31,7 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.list.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run the tests in ${{ matrix.name }}
         env:
           IMAGE: ${{ matrix.image }}
