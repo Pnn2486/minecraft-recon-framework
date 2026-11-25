@@ -1,6 +1,6 @@
 @echo off
-rem Starts the recon web interface on Windows. Double-click this file.
-rem It needs Python 3.10 or newer. If it is missing, the window tells you how to install it.
+rem Starts the web interface on Windows. Just double-click this file.
+rem It needs Python 3.10 or newer. If you do not have it, the window tells you how to get it.
 setlocal
 cd /d "%~dp0"
 set "PYCMD="

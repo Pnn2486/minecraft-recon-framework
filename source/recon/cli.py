@@ -85,6 +85,8 @@ def hostname(text: str) -> str:
         raise argparse.ArgumentTypeError("host must be 1 to 253 characters long")
     if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in value):
         raise argparse.ArgumentTypeError("host must not contain spaces or control characters")
+    if value.startswith("-"):
+        raise argparse.ArgumentTypeError("host must not start with a dash")
     return value
 
 

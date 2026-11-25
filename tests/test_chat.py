@@ -281,8 +281,8 @@ class TestGuiOptions(unittest.TestCase):
         self.assertIn("--preset", argv)
         self.assertNotIn("--cmd", argv)
         argv = gui.build_argv({**self.BASE, "preset": "plugins", "command": "list"})
-        self.assertEqual(argv[argv.index("--cmd") + 1], "list")
-        self.assertEqual(gui.build_argv(self.BASE)[-2:], ["--cmd", "list"])
+        self.assertIn("--cmd=list", argv)
+        self.assertEqual(gui.build_argv(self.BASE)[-1], "--cmd=list")
 
     def test_bad_preset_is_rejected(self) -> None:
         with self.assertRaises(gui.RequestError):

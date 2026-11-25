@@ -53,18 +53,18 @@ One thing to keep in mind for the rest of this page: the Python command has a di
 
 ### 1.2 Download the ZIP and double-click (the easiest way)
 
-On the GitHub page of this project, click the green Code button and then Download ZIP. Unzip the file,  on Windows right-click it and choose Extract All, on MacOS double-click it, and on Linux right-click it and choose Extract Here. Then open the new folder and run the file that matches your system.
+On the GitHub page of this project, click the green Code button and then Download ZIP. Unzip the file,  on Windows right-click it and choose Extract All, on MacOS double-click it, and on Linux right-click it and choose Extract Here. Then open the new folder, open the `launchers` folder inside it, and run the file that matches your system.
 
 | System | File | What to expect |
 |---|---|---|
 | Windows | `boot-windows.bat` | Windows may show a warning. Click More info and then Run anyway. |
 | macOS | `boot-mac.command` | The first time, right-click the file and choose Open, because your Mac does not trust downloaded files by default. |
-| Linux | `boot-linux.sh` | Open it from your file manager, or type `sh boot-linux.sh` in a terminal inside the folder. |
-| Any other system | `boot.py` | Type `python boot.py` in a terminal inside the folder. |
+| Linux | `boot-linux.sh` | Open it from your file manager, or type `sh boot-linux.sh` in a terminal inside the `launchers` folder. |
+| Any other system | `boot.py` | Type `python launchers/boot.py` in a terminal inside the main folder of the project. |
 
 A black window appears and your browser opens the page at `http://127.0.0.1:8765/`. That address only works on your own computer. When you are done, close the black window, or click on it and press Ctrl+C.
 
-Sometimes a double-click on a Mac or Linux does nothing, because files taken out of a ZIP can lose the mark that says they may be run. In that case open a terminal inside the folder and type `sh boot-mac.command` or `sh boot-linux.sh`. Typing `chmod +x boot-linux.sh boot-mac.command` once gives the mark back, and then double-clicking works.
+Sometimes a double-click on a Mac or Linux does nothing, because files taken out of a ZIP can lose the mark that says they may be run. In that case open a terminal inside the `launchers` folder and type `sh boot-mac.command` or `sh boot-linux.sh`. Typing `chmod +x boot-linux.sh boot-mac.command` once gives the mark back, and then double-clicking works.
 
 ### 1.3 Clone it with git
 
@@ -81,10 +81,10 @@ The last line starts the page, and it depends on your system.
 
 ```bash
 # macOS and Linux
-python3 boot.py
+python3 launchers/boot.py
 
 # Windows (PowerShell or Command Prompt)
-py boot.py
+py launchers\boot.py
 ```
 
 When a new version comes out, run `git pull` inside the same folder to get it. You can add `--port 9000` to use another port, or `--no-browser` if you don’t want the page to open by itself.
@@ -180,12 +180,12 @@ These two commands tell you quickly whether everything is in place. The first pr
 
 ```bash
 # macOS and Linux
-python3 boot.py --version
-python3 boot.py --list
+python3 launchers/boot.py --version
+python3 launchers/boot.py --list
 
 # Windows
-py boot.py --version
-py boot.py --list
+py launchers\boot.py --version
+py launchers\boot.py --list
 ```
 
 If you want to run the project's own tests, use the line for your system from inside the project folder. They only talk to small fake servers on your own computer, so nothing goes out to the internet.
@@ -295,11 +295,11 @@ These files start the web interface without installing anything. Python 3.10 or 
 | Windows | `boot-windows.bat` | Double-click it. If Windows shows a blue warning, choose More info, then Run anyway. |
 | macOS | `boot-mac.command` | Double-click it. The first time, right-click it and choose Open. |
 | Linux (any distribution) | `boot-linux.sh` | Open it from your file manager, or run `sh boot-linux.sh`. |
-| Anything else | `boot.py` | Run `python boot.py`. |
+| Anything else | `boot.py` | Run `python launchers/boot.py` from the main folder of the project. |
 
-`boot.py` is the adapter behind them. It detects the system, finds the distribution on Linux (Debian, Ubuntu, Mint, Fedora, RHEL, Arch, openSUSE, Alpine, Void, Gentoo, NixOS and the systems based on them), checks the Python version and starts `recon-gui`. `python boot.py --list` shows the install hints for every system, and `python boot.py --os mac` shows the hint for one. Options such as `--port 9000` or `--no-browser` are passed on to the interface.
+`boot.py` is the adapter behind them. It detects the system, finds the distribution on Linux (Debian, Ubuntu, Mint, Fedora, RHEL, Arch, openSUSE, Alpine, Void, Gentoo, NixOS and the systems based on them), checks the Python version and starts `recon-gui`. `python launchers/boot.py --list` shows the install hints for every system, and `python launchers/boot.py --os mac` shows the hint for one. Options such as `--port 9000` or `--no-browser` are passed on to the interface.
 
-Files that come from a download or a web upload on GitHub lose their "runnable" mark. If a double-click does nothing on macOS or Linux, open a terminal in the project folder and type `sh boot-mac.command` or `sh boot-linux.sh` once, or `chmod +x boot-linux.sh boot-mac.command` to make them double-clickable.
+Files that come from a download or a web upload on GitHub lose their "runnable" mark. If a double-click does nothing on macOS or Linux, open a terminal in the `launchers` folder and type `sh boot-mac.command` or `sh boot-linux.sh` once, or `chmod +x boot-linux.sh boot-mac.command` to make them double-clickable.
 
 ## 5. Using the command line
 
@@ -377,10 +377,10 @@ The first one raises the longest session the web page accepts. The second one ma
 
 ### 6.2 Where the program looks for it
 
-1. The file you name with `--config`, for example `python3 boot.py --config my-settings.ini` or `recon --config my-settings.ini --host 127.0.0.1 --mode ping`.
+1. The file you name with `--config`, for example `python3 launchers/boot.py --config my-settings.ini` or `recon --config my-settings.ini --host 127.0.0.1 --mode ping`.
 2. The file named by the `RECON_CONFIG` environment variable.
 3. `settings.ini` in the folder you started the program from.
-4. `settings.ini` in the main folder of the project, next to `boot.py`.
+4. `settings.ini` in the main folder of the project, the one that holds `source` and `launchers`.
 
 If you installed the project with pip, there is no project folder, so use the third place (your current folder) or one of the first two. When the web page starts, it prints which file it loaded.
 
@@ -442,7 +442,7 @@ Please read this before relying on the tool.
 
 * **Automated tests use fake servers only.** The test suite (`tests/test_protocols.py`) starts small imitation servers on `127.0.0.1` that were written from the published protocol specifications. They prove the code follows those specifications. They do **not** prove it works against every real server.
 * **No mode has been verified against a real Minecraft server by the authors.** This applies to `ping`, `query`, `rcon` and `ghost` alike. Treat the first run against your own server as the real test, and open an issue if something is different.
-* **Python versions:** The code is written for Python `3.10+`. CI runs `3.10` through `3.15` on Linux, macOS and Windows.
+* **Python versions:** The code is written for Python `3.10+`. CI runs `3.10` through `3.15` on Linux, macOS and Windows, and the oldest and a recent version on more system versions (Ubuntu 22.04 and 24.04, Windows 2022 and 2025, macOS 14 and 15, and ARM and Intel processors). The tests also run inside 25 Linux containers (Debian, Ubuntu, Fedora, Rocky, Alma, Oracle, CentOS Stream, Amazon Linux, openSUSE, Alpine, Arch, Kali and Gentoo).
 
 ### 8.2 Minecraft version support
 
@@ -479,8 +479,9 @@ Please read this before relying on the tool.
 
 * **RCON password.** The password is never printed, logged or included in error messages. Prefer the `MC_RCON_PASSWORD` environment variable to `--password`.
 * **Timeouts and retries.** Every connection has a timeout (default 5 seconds). There are no automatic retries on purpose, so a failing target is never hit repeatedly.
-* **Web interface.** `recon-gui` listens on `127.0.0.1` only and checks the host name, a per-run token and the origin of every request. See section 4.1.
-* **Hosts and ports.** Ports must be 1 to 65535. Host names must be 1 to 253 characters with no spaces or control characters.
+* **Web interface.** `recon-gui` listens on `127.0.0.1` only and checks the host name, a per-run token and the origin of every request. A connection that stays silent for 15 seconds is dropped, and on Windows the port is not shared with other programs. See section 4.1.
+* **Hosts and ports.** Ports must be 1 to 65535. Host names must be 1 to 253 characters with no spaces or control characters, and they can't start with a dash.
+* **Hostile servers.** A server can announce any packet size it likes, so the client refuses anything bigger than 8 MiB, which is more than Minecraft itself sends, and it never unpacks a compressed packet past that size. A status reply that is not a JSON object is rejected.
 * **Proxies and DNS.** The tool ignores proxy settings and connects directly. It resolves host names with the operating system and does not look up SRV records, so use the real host and port.
 
 ---
@@ -512,31 +513,39 @@ Please read this before relying on the tool.
     - `__main__.py` - makes `python -m recon` work
 - **.github**
   - `dependabot.yml` - weekly update pull requests for GitHub Actions and pip
+  - `PULL_REQUEST_TEMPLATE.md` - checklist shown when you open a pull request
+  - **ISSUE_TEMPLATE** - the form for bug reports
   - **workflows**
-    - `ci.yml` - tests on Linux, macOS and Windows with Python 3.10-3.15, plus lint, type check, coverage and a package build check
+    - `ci.yml` - tests on Linux, macOS and Windows (several versions of each, Intel and ARM) with Python 3.10-3.15, plus lint, type check, coverage and a package build check
+    - `linux-distros.yml` - runs the tests inside the Linux images listed in `tests/distros.json`
     - `integration.yml` - manual test against a real Minecraft server in Docker
     - `release.yml` - builds the package and creates a GitHub release when a version tag is pushed
 - **program_info**
   - `org.recon.Framework.json` - protocol & port manifest
+- **launchers**
+  - `boot.py` - starts the web interface on any system (detects the system and checks Python)
+  - `boot-windows.bat`, `boot-mac.command`, `boot-linux.sh` - double-click launchers that call `boot.py`
 - **scripts**
   - `run_recon.py` - automated multi-protocol audit script
-- **tools**
   - `packet_inspector.py` - hex + ASCII wire-frame inspector
 - **tests**
   - `test_varint.py` - unit tests for serialization & framing
   - `test_protocols.py` - loopback tests for ping, query, RCON, ghost and CLI validation
   - `test_gui.py` - tests for the web interface server, its safety checks and its files
+  - `test_hardening.py` - tests for the size limits on what a server can send and for option handling
+  - `distros.json` - the Linux images the `linux-distros.yml` workflow tests in
+  - `run_in_container.sh` - runs the tests inside one of those images
   - `test_boot.py` - tests for the launcher: system detection, install hints and the launcher files
   - `test_settings.py` - tests for the settings file and everything that reads it
   - `test_chat.py` - tests for the NBT and text readers, the chat decoder, diagnostics and RCON presets
 
 - `settings.ini` - optional settings (limits and defaults), see section 6
-- `boot.py` - starts the web interface on any system (detects the system and checks Python)
-- `boot-windows.bat`, `boot-mac.command`, `boot-linux.sh` - double-click launchers that call `boot.py`
 - `pyproject.toml` - build spec & CLI entry point
 - `Containerfile` - Docker / Podman container spec
 - `README.md` - this file
 - `CONTRIBUTING.md` - pull request & coding standards
+- `SECURITY.md` - how to report a security problem
+- `CHANGELOG.md` - what changed in each version
 - `CODE_OF_CONDUCT.md` - community conduct rules & ethical-use standard
 - `COPYING.md` - liability disclaimer
 - `LICENSE` - authorized use license
@@ -754,9 +763,9 @@ $env:PYTHONPATH="source"; $env:MC_TARGET_HOST="127.0.0.1"; py scripts/run_recon.
 
 Exit code `0` means at least one attempted probe succeeded, `1` means every attempted probe failed, and `2` means an invalid port in the environment.
 
-### 12.2 Packet inspector (`tools/packet_inspector.py`)
+### 12.2 Packet inspector (`scripts/packet_inspector.py`)
 
-Prints the exact bytes of the packets the tool sends (handshake, GameSpy4 challenge, RCON login) as hex and text, so you can compare them with the protocol documents. It never connects to anything. `PYTHONPATH=source python3 tools/packet_inspector.py` shows them (on Windows PowerShell, `$env:PYTHONPATH="source"; py tools/packet_inspector.py`), `--host` and `--port` change the sample address, and `--self-test` runs the silent checks that CI uses.
+Prints the exact bytes of the packets the tool sends (handshake, GameSpy4 challenge, RCON login) as hex and text, so you can compare them with the protocol documents. It never connects to anything. `PYTHONPATH=source python3 scripts/packet_inspector.py` shows them (on Windows PowerShell, `$env:PYTHONPATH="source"; py scripts/packet_inspector.py`), `--host` and `--port` change the sample address, and `--self-test` runs the silent checks that CI uses.
 
 ---
 ## 13. References

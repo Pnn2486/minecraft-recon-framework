@@ -1,6 +1,6 @@
 #!/bin/sh
-# Starts the recon web interface on Linux.
-# It works on any distribution. If Python 3.10 or newer is missing, it tells you the install command for your distribution.
+# Starts the web interface on Linux.
+# Works on any distro. If Python 3.10 or newer is missing, it shows the install command for yours.
 # If your file manager will not run it, open a terminal in this folder and type: sh boot-linux.sh
 
 cd "$(dirname "$0")" || exit 1

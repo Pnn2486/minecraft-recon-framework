@@ -6,10 +6,10 @@ LABEL org.opencontainers.image.title="minecraft-recon-framework" \
 
 WORKDIR /app
 
-COPY pyproject.toml README.md LICENSE COPYING.md /app/
+COPY pyproject.toml README.md LICENSE COPYING.md settings.ini /app/
 COPY source/ /app/source/
+COPY launchers/ /app/launchers/
 COPY scripts/ /app/scripts/
-COPY tools/ /app/tools/
 COPY tests/ /app/tests/
 
 ENV PYTHONPATH=/app/source \
@@ -17,7 +17,7 @@ ENV PYTHONPATH=/app/source \
     PYTHONUNBUFFERED=1
 
 RUN python3 -m unittest discover -s tests && \
-    python3 tools/packet_inspector.py --self-test
+    python3 scripts/packet_inspector.py --self-test
 
 ENTRYPOINT ["python3", "-m", "recon.cli"]
 CMD ["--help"]

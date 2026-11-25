@@ -1,4 +1,4 @@
-"""Tests for the boot launcher: system detection, install hints and launcher files"""
+"""Tests for the boot launcher: system detection, install hints and the launcher files"""
 
 import ast
 import importlib.util
@@ -9,10 +9,11 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+LAUNCHERS = ROOT / "launchers"
 
 
 def _load_boot():
-    spec = importlib.util.spec_from_file_location("boot", ROOT / "boot.py")
+    spec = importlib.util.spec_from_file_location("boot", LAUNCHERS / "boot.py")
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -61,35 +62,35 @@ class TestDetection(unittest.TestCase):
 class TestLauncherFiles(unittest.TestCase):
     def test_files_exist_and_point_at_boot_py(self) -> None:
         for name in ("boot-windows.bat", "boot-mac.command", "boot-linux.sh"):
-            text = (ROOT / name).read_text(encoding="utf-8")
+            text = (LAUNCHERS / name).read_text(encoding="utf-8")
             self.assertIn("boot.py", text, name)
             self.assertIn("3, 10", text, name)
 
     def test_windows_file_starts_quietly(self) -> None:
-        self.assertTrue((ROOT / "boot-windows.bat").read_text(encoding="utf-8").startswith("@echo off"))
+        self.assertTrue((LAUNCHERS / "boot-windows.bat").read_text(encoding="utf-8").startswith("@echo off"))
 
     def test_boot_py_stays_parseable_by_old_python(self) -> None:
-        source = (ROOT / "boot.py").read_text(encoding="utf-8")
+        source = (LAUNCHERS / "boot.py").read_text(encoding="utf-8")
         ast.parse(source, feature_version=(3, 7))
         self.assertNotIn(":=", source)
         self.assertNotIn("| None", source)
 
     def test_list_and_hint_options(self) -> None:
-        listing = subprocess.run([sys.executable, str(ROOT / "boot.py"), "--list"], capture_output=True, text=True, timeout=30, check=False)
+        listing = subprocess.run([sys.executable, str(LAUNCHERS / "boot.py"), "--list"], capture_output=True, text=True, timeout=30, check=False)
         self.assertEqual(listing.returncode, 0)
         self.assertIn("boot-windows.bat", listing.stdout)
-        hint = subprocess.run([sys.executable, str(ROOT / "boot.py"), "--os", "windows"], capture_output=True, text=True, timeout=30, check=False)
+        hint = subprocess.run([sys.executable, str(LAUNCHERS / "boot.py"), "--os", "windows"], capture_output=True, text=True, timeout=30, check=False)
         self.assertIn("winget", hint.stdout)
 
     def test_version_goes_through_to_the_interface(self) -> None:
-        result = subprocess.run([sys.executable, str(ROOT / "boot.py"), "--version"], capture_output=True, text=True, timeout=30, check=False)
+        result = subprocess.run([sys.executable, str(LAUNCHERS / "boot.py"), "--version"], capture_output=True, text=True, timeout=30, check=False)
         self.assertEqual(result.returncode, 0)
         self.assertIn("recon-gui", result.stdout)
 
     @unittest.skipIf(os.name == "nt", "the shell launchers are for macOS and Linux")
     def test_shell_launchers_start_the_interface(self) -> None:
         for name in ("boot-linux.sh", "boot-mac.command"):
-            result = subprocess.run(["sh", str(ROOT / name), "--version"], capture_output=True, text=True, timeout=30, check=False)
+            result = subprocess.run(["sh", str(LAUNCHERS / name), "--version"], capture_output=True, text=True, timeout=30, check=False)
             self.assertEqual(result.returncode, 0, name + result.stderr)
             self.assertIn("recon-gui", result.stdout)
 

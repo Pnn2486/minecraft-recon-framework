@@ -15,7 +15,7 @@ authors = [
 ]
 keywords = ["minecraft", "network-programming", "rcon", "gamespy4", "protocol-analysis"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Environment :: Web Environment",
     "Intended Audience :: Developers",
@@ -67,7 +67,7 @@ ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"
-files = ["source", "tools", "scripts"]
+files = ["source", "scripts"]
 mypy_path = "source"
 namespace_packages = true
 explicit_package_bases = true

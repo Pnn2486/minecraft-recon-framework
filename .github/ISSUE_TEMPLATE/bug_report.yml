@@ -1,0 +1,41 @@
+name: Bug report
+description: Something doesn't work the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Please only report problems with servers you own or have permission to test.
+        For a security problem, don't post it here, use the Report a vulnerability button on the Security tab.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, and what did you expect to happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output or error message
+      description: Paste it here. Remove any password or private address first.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Run `recon --version` or `python launchers/boot.py --version`
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System and Python version
+      placeholder: Windows 11, Python 3.12
+    validations:
+      required: true
+  - type: input
+    id: server
+    attributes:
+      label: Server software and version
+      placeholder: Paper 1.21.1
