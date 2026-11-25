@@ -14,6 +14,7 @@ from recon.utils.varint import (
     read_varint_sock,
     read_varint_bytes,
     read_string_bytes,
+    check_packet_length,
 )
 
 
@@ -37,7 +38,7 @@ def mc_status_ping(
             sock.sendall(pack_varint(len(handshake_payload)) + handshake_payload)
             sock.sendall(b"\x01\x00")
 
-            frame_len = read_varint_sock(sock)
+            frame_len = check_packet_length(read_varint_sock(sock))
             frame_data = recv_exact(sock, frame_len)
 
             pkt_id, offset = read_varint_bytes(frame_data, 0)
@@ -45,7 +46,9 @@ def mc_status_ping(
                 raise ProtocolFramingError(f"Expected Status Response ID 0x00, received {hex(pkt_id)}")
 
             raw_json, _ = read_string_bytes(frame_data, offset)
-            descriptor: dict = json.loads(raw_json)
+            descriptor = json.loads(raw_json)
+            if not isinstance(descriptor, dict):
+                raise ProtocolFramingError("The status reply is not a JSON object")
 
             if measure_latency:
                 timestamp_ms = int(time.time() * 1000)
@@ -53,7 +56,7 @@ def mc_status_ping(
                 t_start = time.perf_counter()
                 sock.sendall(pack_varint(len(ping_payload)) + ping_payload)
 
-                pong_len = read_varint_sock(sock)
+                pong_len = check_packet_length(read_varint_sock(sock))
                 pong_data = recv_exact(sock, pong_len)
                 t_elapsed_ms = round((time.perf_counter() - t_start) * 1000.0, 2)
 

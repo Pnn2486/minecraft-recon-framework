@@ -1,0 +1,40 @@
+name: Linux distributions
+
+# Runs the tests inside the Linux images listed in tests/distros.json
+# Kept apart from ci.yml so one broken image never hides the main results
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.read.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        run: echo "matrix=$(jq -c . tests/distros.json)" >> "$GITHUB_OUTPUT"
+
+  distro:
+    name: ${{ matrix.name }}
+    needs: list
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.list.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the tests in ${{ matrix.name }}
+        env:
+          IMAGE: ${{ matrix.image }}
+          INSTALL: ${{ matrix.install }}
+          PYTHON: ${{ matrix.python || 'python3' }}
+        run: sh tests/run_in_container.sh

@@ -19,6 +19,8 @@ from recon.utils.nbt import read_network_nbt
 from recon.utils.text import component_to_text, json_text_to_plain, strip_codes
 from recon.utils.versions import describe
 from recon.utils.varint import (
+    MAX_PACKET_BYTES,
+    check_packet_length,
     pack_varint,
     pack_string,
     recv_exact,
@@ -45,7 +47,7 @@ def _send_framed_packet(sock: socket.socket, payload: bytes, compression_thresho
 
 def _recv_framed_packet(sock: socket.socket, compression_threshold: int) -> tuple[int, bytes]:
     """Reads a complete packet frame from the socket, decompressing when threshold >= 0"""
-    frame_len = read_varint_sock(sock)
+    frame_len = check_packet_length(read_varint_sock(sock))
     raw_frame = recv_exact(sock, frame_len)
 
     if compression_threshold >= 0:
@@ -53,10 +55,14 @@ def _recv_framed_packet(sock: socket.socket, compression_threshold: int) -> tupl
         if uncompressed_len == 0:
             payload = raw_frame[offset:]
         else:
+            check_packet_length(uncompressed_len, "uncompressed packet")
             try:
-                payload = zlib.decompress(raw_frame[offset:])
+                inflater = zlib.decompressobj()
+                payload = inflater.decompress(raw_frame[offset:], MAX_PACKET_BYTES)
             except zlib.error as exc:
                 raise ProtocolFramingError(f"Zlib stream decompression error: {exc}") from exc
+            if inflater.unconsumed_tail:
+                raise ProtocolFramingError("The compressed packet unpacks to more than a Minecraft packet can hold")
     else:
         payload = raw_frame
 
@@ -127,6 +133,105 @@ def detect_protocol_version(host: str, port: int = 25565, timeout: float = 5.0) 
     return protocol, str(version.get("name", "unknown")) if isinstance(version, dict) else "unknown"
 
 
+class _Session:
+    """One test player connection, it keeps the state and reacts to every packet from the server"""
+
+    def __init__(self, sock: socket.socket, profile: GhostProfile, username: str, stats: SessionStats) -> None:
+        self.sock = sock
+        self.profile = profile
+        self.username = username
+        self.stats = stats
+        self.state = "login"  # login -> (configuration ->) play
+        self.compression = -1
+
+    def send(self, payload: bytes) -> None:
+        _send_framed_packet(self.sock, payload, self.compression)
+
+    def receive(self) -> tuple[int, bytes]:
+        return _recv_framed_packet(self.sock, self.compression)
+
+    def handle(self, pkt_id: int, data: bytes) -> bool:
+        """Reacts to one packet, gives True when the server ended the session"""
+        self.stats.packet(self.state, pkt_id, len(data))
+        if self.state == "login":
+            self._login(pkt_id, data)
+            return False
+        if self.state == "configuration":
+            return self._configuration(pkt_id, data)
+        return self._play(pkt_id, data)
+
+    def _enter_play(self) -> None:
+        self.state = "play"
+        self.stats.mark("play")
+
+    def _login(self, pkt_id: int, data: bytes) -> None:
+        profile = self.profile
+        if pkt_id == 0x00:
+            reason, _ = read_string_bytes(data, 0)
+            raise AuthenticationError(f"Login disconnect (0x00): {reason}")
+        if pkt_id == 0x01:
+            raise OnlineModeRequiredError("Server sent an encryption request (0x01). The target has online-mode=true.")
+        if pkt_id == 0x03:
+            self.compression, _ = read_varint_bytes(data, 0)
+            self.stats.compression = self.compression
+            print(f"[+] Compression threshold set by the server (zlib): {self.compression} bytes")
+        elif pkt_id == 0x02:
+            self.stats.mark("login")
+            if profile.has_configuration_phase:
+                self.send(pack_varint(profile.login_acknowledged_out))
+                self.state = "configuration"
+                print(f"[+] Login success (0x02): '{self.username}' entering the configuration phase.")
+            else:
+                self._enter_play()
+                print(f"[+] Login success (0x02): '{self.username}' entered the play state.")
+
+    def _configuration(self, pkt_id: int, data: bytes) -> bool:
+        profile = self.profile
+        if pkt_id == profile.config_disconnect_in:
+            print(f"[!] Server disconnect during configuration (0x{pkt_id:02X}): {_disconnect_reason(profile, data)}")
+            self.stats.end_reason = "server disconnected during configuration"
+            return True
+        if pkt_id == profile.config_keep_alive_in and data:
+            self.send(pack_varint(profile.config_keep_alive_out) + data)
+            print("[~] Echoed keep-alive (configuration)")
+        elif pkt_id == profile.config_ping_in and len(data) == 4:
+            self.send(pack_varint(profile.config_pong_out) + data)
+        elif pkt_id == profile.config_known_packs_in:
+            # Reply "no known packs" (empty array), the server waits for this reply
+            self.send(pack_varint(profile.config_known_packs_out) + pack_varint(0))
+        elif pkt_id == profile.config_finish_in:
+            self.send(pack_varint(profile.config_finish_ack_out))
+            self._enter_play()
+            print(f"[+] Configuration finished: '{self.username}' entered the play state.")
+        return False
+
+    def _play(self, pkt_id: int, data: bytes) -> bool:
+        profile = self.profile
+        if pkt_id == profile.play_keep_alive_in and data:
+            # The token is an int, VarInt or long depending on the version, echoing the raw bytes works for all of them
+            self.send(pack_varint(profile.play_keep_alive_out) + data)
+            self.stats.keep_alive()
+            if settings.get("output", "show_keep_alives"):
+                print(f"[~] Echoed keep-alive (0x{profile.play_keep_alive_out:02X}): {len(data)} bytes")
+        elif pkt_id in profile.play_chat_json_ids or pkt_id in profile.play_chat_opaque_ids:
+            _report_chat(profile, pkt_id, data, self.stats)
+        elif pkt_id == profile.play_disconnect:
+            print(f"[!] Server disconnect in the play state (0x{pkt_id:02X}): {_disconnect_reason(profile, data)}")
+            self.stats.end_reason = "server disconnected the test player"
+            return True
+        return False
+
+
+def _choose_protocol(host: str, port: int, protocol_version: int | str, timeout: float) -> int:
+    if protocol_version == AUTO_PROTOCOL:
+        protocol, server_name = detect_protocol_version(host, port, timeout)
+        print(f"[+] Detected server version: {describe(protocol)}; the server calls itself {server_name!r}")
+        return protocol
+    if isinstance(protocol_version, int):
+        return protocol_version
+    raise UnsupportedProtocolError(f"protocol_version must be a number or {AUTO_PROTOCOL!r}, got {protocol_version!r}")
+
+
 def headless_ghost_stream(
     host: str,
     port: int = 25565,
@@ -137,93 +242,23 @@ def headless_ghost_stream(
     diagnostics: bool = False,
 ) -> None:
     """Joins an offline-mode server, echoes keep-alives and prints the chat, protocol_version can also be auto"""
-    if protocol_version == AUTO_PROTOCOL:
-        protocol, server_name = detect_protocol_version(host, port, timeout)
-        print(f"[+] Detected server version: {describe(protocol)}; the server calls itself {server_name!r}")
-    elif isinstance(protocol_version, int):
-        protocol = protocol_version
-    else:
-        raise UnsupportedProtocolError(f"protocol_version must be a number or {AUTO_PROTOCOL!r}, got {protocol_version!r}")
+    protocol = _choose_protocol(host, port, protocol_version, timeout)
     profile = get_profile(protocol)
-    compression_threshold = -1
-    state = "login"  # login -> (configuration ->) play
     stats = SessionStats(profile)
 
     try:
         with socket.create_connection((host, port), timeout=timeout) as sock:
             stats.mark("connected")
+            session = _Session(sock, profile, username, stats)
             handshake = pack_varint(0x00) + pack_varint(protocol) + pack_string(host) + struct.pack(">H", port) + pack_varint(2)
-            _send_framed_packet(sock, handshake, compression_threshold)
-            _send_framed_packet(sock, _build_login_start_packet(username, profile), compression_threshold)
+            session.send(handshake)
+            session.send(_build_login_start_packet(username, profile))
 
             start_ts = time.time()
             while time.time() - start_ts < duration:
-                pkt_id, data = _recv_framed_packet(sock, compression_threshold)
-                stats.packet(state, pkt_id, len(data))
-
-                if state == "login":
-                    if pkt_id == 0x00:
-                        reason, _ = read_string_bytes(data, 0)
-                        raise AuthenticationError(f"Login disconnect (0x00): {reason}")
-
-                    elif pkt_id == 0x01:
-                        raise OnlineModeRequiredError("Server sent an encryption request (0x01). The target has online-mode=true.")
-
-                    elif pkt_id == 0x03:
-                        compression_threshold, _ = read_varint_bytes(data, 0)
-                        stats.compression = compression_threshold
-                        print(f"[+] Compression threshold set by the server (zlib): {compression_threshold} bytes")
-
-                    elif pkt_id == 0x02:
-                        stats.mark("login")
-                        if profile.has_configuration_phase:
-                            _send_framed_packet(sock, pack_varint(profile.login_acknowledged_out), compression_threshold)
-                            state = "configuration"
-                            print(f"[+] Login success (0x02): '{username}' entering the configuration phase.")
-                        else:
-                            state = "play"
-                            stats.mark("play")
-                            print(f"[+] Login success (0x02): '{username}' entered the play state.")
-
-                elif state == "configuration":
-                    if pkt_id == profile.config_disconnect_in:
-                        print(f"[!] Server disconnect during configuration (0x{pkt_id:02X}): {_disconnect_reason(profile, data)}")
-                        stats.end_reason = "server disconnected during configuration"
-                        break
-
-                    elif pkt_id == profile.config_keep_alive_in and data:
-                        _send_framed_packet(sock, pack_varint(profile.config_keep_alive_out) + data, compression_threshold)
-                        print("[~] Echoed keep-alive (configuration)")
-
-                    elif pkt_id == profile.config_ping_in and len(data) == 4:
-                        _send_framed_packet(sock, pack_varint(profile.config_pong_out) + data, compression_threshold)
-
-                    elif pkt_id == profile.config_known_packs_in:
-                        # Reply "no known packs" (empty array); the server waits for this reply
-                        _send_framed_packet(sock, pack_varint(profile.config_known_packs_out) + pack_varint(0), compression_threshold)
-
-                    elif pkt_id == profile.config_finish_in:
-                        _send_framed_packet(sock, pack_varint(profile.config_finish_ack_out), compression_threshold)
-                        state = "play"
-                        stats.mark("play")
-                        print(f"[+] Configuration finished: '{username}' entered the play state.")
-
-                else:
-                    if pkt_id == profile.play_keep_alive_in and data:
-                        # The token is an int, VarInt or long depending on the version. Echoing the raw bytes works for all of them
-                        pong_frame = pack_varint(profile.play_keep_alive_out) + data
-                        _send_framed_packet(sock, pong_frame, compression_threshold)
-                        stats.keep_alive()
-                        if settings.get("output", "show_keep_alives"):
-                            print(f"[~] Echoed keep-alive (0x{profile.play_keep_alive_out:02X}): {len(data)} bytes")
-
-                    elif pkt_id in profile.play_chat_json_ids or pkt_id in profile.play_chat_opaque_ids:
-                        _report_chat(profile, pkt_id, data, stats)
-
-                    elif pkt_id == profile.play_disconnect:
-                        print(f"[!] Server disconnect in the play state (0x{pkt_id:02X}): {_disconnect_reason(profile, data)}")
-                        stats.end_reason = "server disconnected the test player"
-                        break
+                pkt_id, data = session.receive()
+                if session.handle(pkt_id, data):
+                    break
 
     except OSError as exc:
         raise ReconError(f"Ghost client socket error on {host}:{port}: {exc}") from exc

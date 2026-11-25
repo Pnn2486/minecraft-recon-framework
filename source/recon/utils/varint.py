@@ -6,6 +6,15 @@ import hashlib
 import socket
 from recon.exceptions import ProtocolFramingError
 
+MAX_PACKET_BYTES = 8 * 1024 * 1024  # more than any packet Minecraft sends, so a hostile server can't make us read forever
+
+
+def check_packet_length(length: int, what: str = "packet") -> int:
+    """Gives the length back, or raises when a length from the network is negative or too big"""
+    if length < 0 or length > MAX_PACKET_BYTES:
+        raise ProtocolFramingError(f"The server announced a {what} of {length} bytes, which is not valid")
+    return length
+
 
 def recv_exact(sock: socket.socket, num_bytes: int) -> bytes:
     """Reads exactly num_bytes from a socket, even when the data arrives in pieces"""

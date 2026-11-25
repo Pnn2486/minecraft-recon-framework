@@ -46,7 +46,7 @@ Run these from the repository root before opening a pull request, and make sure 
 
 ```bash
 python3 -m unittest discover -s tests -v
-python3 tools/packet_inspector.py --self-test
+python3 scripts/packet_inspector.py --self-test
 python3 -m pip install ruff mypy
 ruff check .
 mypy

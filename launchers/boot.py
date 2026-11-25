@@ -73,10 +73,10 @@ def install_hint(system, words=None):
 
 def print_list():
     print("Systems I know:")
-    print("  Windows   double-click boot-windows.bat")
-    print("  macOS     double-click boot-mac.command")
+    print("  Windows   double-click boot-windows.bat (in the launchers folder)")
+    print("  macOS     double-click boot-mac.command (in the launchers folder)")
     print("  Linux     run boot-linux.sh, or open it from your file manager")
-    print("  anything with Python 3.10 or newer:  python boot.py")
+    print("  anything with Python 3.10 or newer:  python launchers/boot.py")
     print("")
     print("Installing Python:")
     for key in ("windows", "mac"):
@@ -104,10 +104,10 @@ def main(argv=None):
         print(install_hint(system))
         return 1
 
-    root = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     source = os.path.join(root, "source")
     if not os.path.isdir(os.path.join(source, "recon")):
-        print("I can't find the source/recon folder next to boot.py. Keep this file in the main folder of the project.")
+        print("I can't find the source/recon folder. Keep the launchers folder inside the main folder of the project.")
         return 1
     sys.path.insert(0, source)
 

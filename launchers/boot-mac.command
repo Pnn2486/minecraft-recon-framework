@@ -1,7 +1,7 @@
 #!/bin/sh
-# Starts the recon web interface on macOS.
-# Double-click it in Finder. The first time, macOS may ask you to confirm: right-click the file and choose Open.
-# If it does not open at all, open Terminal in this folder and type: sh boot-mac.command
+# Starts the web interface on a Mac.
+# Double-click it in Finder. The first time, your Mac may ask first: right-click the file and pick Open.
+# If it still will not open, open Terminal in this folder and type: sh boot-mac.command
 
 cd "$(dirname "$0")" || exit 1
 

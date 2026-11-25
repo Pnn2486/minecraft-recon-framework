@@ -4,8 +4,10 @@ import argparse
 import contextlib
 import io
 import json
+import os
 import re
 import secrets
+import sys
 import threading
 import time
 import webbrowser
@@ -16,6 +18,7 @@ from urllib.parse import parse_qs, urlsplit
 from recon import cli, settings
 from recon.protocols.ghost_profiles import PROFILES
 from recon.protocols.rcon_presets import PRESET_LABELS, PRESETS
+from recon.settings import USERNAME_PATTERN
 from recon.utils.versions import VERSION_NAMES, version_range
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -27,16 +30,15 @@ STATIC_FILES = {
 STATIC_PATHS = {name: WEB_DIR / name for name in STATIC_FILES}  # only these files can be served
 MODES = ("ping", "query", "rcon", "ghost")
 MAX_BODY_BYTES = 16 * 1024  # fixed on purpose, not a setting
-
-
-def _limit(name: str) -> int:
-    return settings.get("limits", name)  # type: ignore[no-any-return]
-USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,16}$")
 CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 CONTENT_SECURITY_POLICY = (
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
     "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
+
+
+def _limit(name: str) -> int:
+    return settings.get("limits", name)  # type: ignore[no-any-return]
 
 
 class RequestError(Exception):
@@ -68,6 +70,52 @@ def _checked(payload: dict, key: str, label: str, validator, required: bool = Fa
         raise RequestError(f"{label}: {exc}") from None
 
 
+def _rcon_argv(payload: dict) -> list[str]:
+    argv: list[str] = []
+    rcon_port = _checked(payload, "rcon_port", "RCON port", cli.port_number)
+    if rcon_port is not None:
+        argv += ["--rcon-port", rcon_port]
+    password = payload.get("password")
+    if not isinstance(password, str) or not password:
+        raise RequestError("Enter the RCON password.")
+    if len(password) > _limit("max_password_chars") or CONTROL_CHARS.search(password):
+        raise RequestError("RCON password: too long or contains control characters.")
+    preset = _field(payload, "preset")
+    if preset and preset not in PRESETS:
+        raise RequestError("Quick check: choose one of the listed sets.")
+    command = _field(payload, "command")
+    if len(command) > _limit("max_command_chars") or CONTROL_CHARS.search(command):
+        raise RequestError(f"Command: must be at most {_limit('max_command_chars')} characters, on one line.")
+    argv.append(f"--password={password}")  # joined with = so a value that starts with a dash is not read as an option
+    if preset:
+        argv += ["--preset", preset]
+    if command or not preset:
+        argv.append(f"--cmd={command or 'list'}")
+    return argv
+
+
+def _ghost_argv(payload: dict) -> list[str]:
+    argv: list[str] = []
+    username = _field(payload, "username") or "AuditNode"
+    if not USERNAME_PATTERN.match(username):
+        raise RequestError("Player name: use 1 to 16 letters, digits or underscores.")
+    argv += ["--username", username]
+    version = _checked(payload, "protocol_version", "Version", cli.protocol_choice)
+    if version is not None:
+        argv += ["--protocol-version", version]
+    duration = _checked(payload, "duration", "Duration", cli.positive_int)
+    if duration is not None:
+        if int(duration) > _limit("max_duration_seconds"):
+            raise RequestError(f"Duration: must be at most {_limit('max_duration_seconds')} seconds.")
+        argv += ["--duration", duration]
+    diagnostics = payload.get("diagnostics")
+    if diagnostics not in (None, True, False):
+        raise RequestError("Diagnostics: must be on or off.")
+    if diagnostics is True:
+        argv.append("--diagnostics")
+    return argv
+
+
 def build_argv(payload: dict) -> list[str]:
     """Turns the form values of the page into command line arguments for `recon.cli.main`"""
     mode = payload.get("mode")
@@ -86,49 +134,13 @@ def build_argv(payload: dict) -> list[str]:
         argv += ["--timeout", timeout]
 
     if mode == "rcon":
-        rcon_port = _checked(payload, "rcon_port", "RCON port", cli.port_number)
-        if rcon_port is not None:
-            argv += ["--rcon-port", rcon_port]
-        password = payload.get("password")
-        if not isinstance(password, str) or not password:
-            raise RequestError("Enter the RCON password.")
-        if len(password) > _limit("max_password_chars") or CONTROL_CHARS.search(password):
-            raise RequestError("RCON password: too long or contains control characters.")
-        preset = _field(payload, "preset")
-        if preset and preset not in PRESETS:
-            raise RequestError("Quick check: choose one of the listed sets.")
-        command = _field(payload, "command")
-        if len(command) > _limit("max_command_chars") or CONTROL_CHARS.search(command):
-            raise RequestError(f"Command: must be at most {_limit('max_command_chars')} characters, on one line.")
-        argv += ["--password", password]
-        if preset:
-            argv += ["--preset", preset]
-        if command or not preset:
-            argv += ["--cmd", command or "list"]
-        return argv
+        return argv + _rcon_argv(payload)
 
     port = _checked(payload, "port", "Port", cli.port_number)
     if port is not None:
         argv += ["--port", port]
-
     if mode == "ghost":
-        username = _field(payload, "username") or "AuditNode"
-        if not USERNAME_PATTERN.match(username):
-            raise RequestError("Player name: use 1 to 16 letters, digits or underscores.")
-        argv += ["--username", username]
-        version = _checked(payload, "protocol_version", "Version", cli.protocol_choice)
-        if version is not None:
-            argv += ["--protocol-version", version]
-        duration = _checked(payload, "duration", "Duration", cli.positive_int)
-        if duration is not None:
-            if int(duration) > _limit("max_duration_seconds"):
-                raise RequestError(f"Duration: must be at most {_limit('max_duration_seconds')} seconds.")
-            argv += ["--duration", duration]
-        diagnostics = payload.get("diagnostics")
-        if diagnostics not in (None, True, False):
-            raise RequestError("Diagnostics: must be on or off.")
-        if diagnostics is True:
-            argv.append("--diagnostics")
+        argv += _ghost_argv(payload)
     return argv
 
 
@@ -246,7 +258,7 @@ class JobRunner:
 
 class ReconWebServer(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    allow_reuse_address = os.name != "nt"  # on Windows this would let another program share the port
 
     def __init__(self, port: int = 0) -> None:
         super().__init__(("127.0.0.1", port), _Handler)
@@ -271,6 +283,7 @@ class _Handler(BaseHTTPRequestHandler):
     server: ReconWebServer  # type: ignore[assignment]
     server_version = "ReconWeb"
     sys_version = ""
+    timeout = 15  # seconds a connection may stay silent, so a stuck client can't hold a thread forever
 
     def log_message(self, format: str, *args) -> None:
         pass
@@ -403,7 +416,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         settings.use_file(args.config)
     except settings.SettingsError as exc:
-        print(f"[!] {exc}", file=cli.sys.stderr)
+        print(f"[!] {exc}", file=sys.stderr)
         return 2
     candidates: list[int] = [args.port] if args.port else [settings.get("web", "port"), 0]
     server: ReconWebServer | None = None
@@ -415,7 +428,7 @@ def main(argv: list[str] | None = None) -> int:
         except OSError as exc:
             last_error = exc
     if server is None:
-        print(f"[!] Could not start the local web server: {last_error}", file=cli.sys.stderr)
+        print(f"[!] Could not start the local web server: {last_error}", file=sys.stderr)
         return 1
 
     print(cli.COMPLIANCE_BANNER)
