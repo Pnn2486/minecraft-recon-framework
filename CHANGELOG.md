@@ -12,7 +12,7 @@ All notable changes are listed here, newest first. Version numbers go major.mino
 - Optional `settings.ini` with 27 settings, and `--config` to pick another file
 - Launchers for Windows, macOS and Linux in the `launchers` folder, with `boot.py` checking the system and the Python version
 - `SECURITY.md`, this changelog and issue and pull request templates
-- Tests on more systems: Ubuntu 22.04 and 24.04, Windows 2022, 2025 and 11 ARM, macOS 14, 15 and Intel, ARM Linux, and 25 Linux distribution containers
+- Tests on more systems: Ubuntu 22.04 and 24.04, Windows 2022, 2025 and 11 ARM, macOS 15, 26 and Intel, ARM Linux, and 25 Linux distribution containers
 
 ### Changed
 - README rewritten with numbered sections, install steps for every system and a table of settings

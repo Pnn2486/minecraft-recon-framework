@@ -442,7 +442,7 @@ Please read this before relying on the tool.
 
 * **Automated tests use fake servers only.** The test suite (`tests/test_protocols.py`) starts small imitation servers on `127.0.0.1` that were written from the published protocol specifications. They prove the code follows those specifications. They do **not** prove it works against every real server.
 * **No mode has been verified against a real Minecraft server by the authors.** This applies to `ping`, `query`, `rcon` and `ghost` alike. Treat the first run against your own server as the real test, and open an issue if something is different.
-* **Python versions:** The code is written for Python `3.10+`. CI runs `3.10` through `3.15` on Linux, macOS and Windows, and the oldest and a recent version on more system versions (Ubuntu 22.04 and 24.04, Windows 2022 and 2025, macOS 14 and 15, and ARM and Intel processors). The tests also run inside 25 Linux containers (Debian, Ubuntu, Fedora, Rocky, Alma, Oracle, CentOS Stream, Amazon Linux, openSUSE, Alpine, Arch, Kali and Gentoo).
+* **Python versions:** The code is written for Python `3.10+`. CI runs `3.10` through `3.15` on Linux, macOS and Windows, and the oldest and a recent version on more system versions (Ubuntu 22.04 and 24.04, Windows 2022 and 2025, macOS 15 and 26, and ARM and Intel processors). The tests also run inside 25 Linux containers (Debian, Ubuntu, Fedora, Rocky, Alma, Oracle, CentOS Stream, Amazon Linux, openSUSE, Alpine, Arch, Kali and Gentoo).
 
 ### 8.2 Minecraft version support
 

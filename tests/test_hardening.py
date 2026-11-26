@@ -16,7 +16,7 @@ HOST = "127.0.0.1"
 
 
 def serve_once(reply: bytes) -> int:
-    """A fake server that answers the first connection with the given bytes and hangs up"""
+    """A fake server that answers the first connection with the given bytes"""
     server = socket.socket()
     server.bind((HOST, 0))
     server.listen(1)
@@ -26,6 +26,13 @@ def serve_once(reply: bytes) -> int:
         with connection:
             connection.recv(4096)
             connection.sendall(reply)
+            connection.shutdown(socket.SHUT_WR)
+            connection.settimeout(3)
+            try:
+                while connection.recv(4096):  # keep reading until the client hangs up, Windows resets the connection otherwise
+                    pass
+            except OSError:
+                pass
         server.close()
 
     threading.Thread(target=run, daemon=True).start()
