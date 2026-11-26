@@ -34,7 +34,7 @@ The quickest way is to download the project, unzip it and double-click the launc
 
 ### 1.1 Do you already have Python?
 
-Open a terminal. On Windows you search for Command Prompt, and on a Mac in open the Terminal app. Type `python3 --version` on a Mac or Linux. On Windows type `py --version`, and if Windows does not know that command, try `python --version`. If the response is 3.10 or higher, such as 3.11 or 3.12, you already have what you need and can skip ahead. If it is lower, or you only get an error, install Python with the command for your system from this table below.
+Open a terminal. On Windows you search for Command Prompt, and on a Mac open the Terminal app. Type `python3 --version` on a Mac or Linux. On Windows type `py --version`, and if Windows does not know that command, try `python --version`. If the response is 3.10 or higher, such as 3.11 or 3.12, you already have what you need and can skip ahead. If it is lower, or you only get an error, install Python with the command for your system from this table below.
 
 | System | How to install Python |
 |---|---|
