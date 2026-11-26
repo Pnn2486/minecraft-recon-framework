@@ -45,7 +45,7 @@ where = ["source"]
 namespaces = true
 
 [tool.setuptools.package-data]
-"recon.web" = ["*.html", "*.css", "*.js", "*.svg"]
+"recon.web" = ["*.html", "*.css", "*.js", "*.svg", "*.woff", "inter-license.txt"]
 
 [project.optional-dependencies]
 # Runtime stays dependency free; these are only for developing and checking the project.

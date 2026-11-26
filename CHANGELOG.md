@@ -18,6 +18,15 @@ All notable changes are listed here, newest first. Version numbers go major.mino
 - README rewritten with numbered sections, install steps for every system and a table of settings
 - Packet inspector moved from `tools/` to `scripts/`, launchers moved from the main folder to `launchers/`
 - Development status in `pyproject.toml` is now Beta
+- Web page (the local `recon-gui` page) got a cleaner, flatter look:
+  - removed the green glow at the top of the page and the colourful gradients on the server icons
+  - the big button at the bottom right that runs the chosen tool (for example "Check status") is now a plain flat green instead of a glossy one
+  - fewer shadows and less rounded corners
+  - green is only used for server status and that main button
+  - the logo at the top left is now the same as the browser tab icon
+  - headings, labels and buttons use the Inter font, while server addresses and the console keep a typewriter-style font
+  - numbers in the results (players, response time) use equal-width digits so they don't shift around
+- The Inter font (regular and semibold, only Latin and Vietnamese letters, about 80 KB) is included in the project together with its license, so the page doesn't load anything from the internet. The page's security rules now allow fonts from the page itself
 
 ### Fixed
 - A server can no longer make the client read or unpack an unlimited amount of data, packets over 8 MiB are refused

@@ -80,11 +80,20 @@ class TestPagesAndSecurity(WebServerCase):
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
 
     def test_static_files_are_served(self) -> None:
-        for name in ("style.css", "app.js", "favicon.svg"):
+        for name in gui.STATIC_FILES:
             with self.subTest(name=name):
-                status, _, raw = self.request("GET", f"/static/{name}", token=False)
+                status, headers, raw = self.request("GET", f"/static/{name}", token=False)
                 self.assertEqual(status, 200)
                 self.assertGreater(len(raw), 100)
+                self.assertEqual(headers["Content-Type"], gui.STATIC_FILES[name])
+
+    def test_fonts_are_allowed_by_the_policy(self) -> None:
+        _, headers, _ = self.request("GET", "/", token=False)
+        self.assertIn("font-src 'self'", headers["Content-Security-Policy"])
+        css = (gui.WEB_DIR / "style.css").read_text(encoding="utf-8")
+        for name in gui.STATIC_FILES:
+            if name.endswith(".woff"):
+                self.assertIn(f"/static/{name}", css)
 
     def test_other_static_paths_are_not_found(self) -> None:
         for path in ("/static/../gui.py", "/static/index.html", "/static/%2e%2e/gui.py", "/static/", "/nothing"):

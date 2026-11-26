@@ -26,13 +26,15 @@ STATIC_FILES = {
     "style.css": "text/css; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
     "favicon.svg": "image/svg+xml",
+    "inter-regular.woff": "font/woff",
+    "inter-semibold.woff": "font/woff",
 }
 STATIC_PATHS = {name: WEB_DIR / name for name in STATIC_FILES}  # only these files can be served
 MODES = ("ping", "query", "rcon", "ghost")
 MAX_BODY_BYTES = 16 * 1024  # fixed on purpose, not a setting
 CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 CONTENT_SECURITY_POLICY = (
-    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
     "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
 
