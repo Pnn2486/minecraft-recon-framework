@@ -493,7 +493,7 @@ Please read this before relying on the tool.
     - `cli.py` - argument parser, validation & dispatch entry point
     - `gui.py` - local web interface server (`recon-gui`)
     - `settings.py` - reads `settings.ini` (the table of every setting, its default and its limits)
-    - **web** - the page the web interface shows (`index.html`, `style.css`, `app.js`, `favicon.svg`)
+    - **web** - the page the web interface shows (`index.html`, `style.css`, `app.js`, `favicon.svg`, and the Inter font files with their license)
     - `exceptions.py` - structured exception hierarchy (`ReconError`, etc.)
     - **utils**
       - `varint.py` - Base-128 VarInt, `recv_exact` & UUID v3 generators
