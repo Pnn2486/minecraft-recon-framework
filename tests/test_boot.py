@@ -66,6 +66,13 @@ class TestLauncherFiles(unittest.TestCase):
             self.assertIn("boot.py", text, name)
             self.assertIn("3, 10", text, name)
 
+    @unittest.skipIf(os.name == "nt", "Windows has no runnable flag")
+    def test_shell_launchers_are_runnable(self) -> None:
+        # A file uploaded through the GitHub website loses this flag, so a double-click would do nothing
+        for name in ("boot-linux.sh", "boot-mac.command"):
+            with self.subTest(name=name):
+                self.assertTrue(os.access(LAUNCHERS / name, os.X_OK))
+
     def test_windows_file_starts_quietly(self) -> None:
         self.assertTrue((LAUNCHERS / "boot-windows.bat").read_text(encoding="utf-8").startswith("@echo off"))
 

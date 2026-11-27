@@ -64,7 +64,26 @@ On the GitHub page of this project, click the green Code button and then Downloa
 
 A black window appears and your browser opens the page at `http://127.0.0.1:8765/`. That address only works on your own computer. When you are done, close the black window, or click on it and press Ctrl+C.
 
-Sometimes a double-click on a Mac or Linux does nothing, because files taken out of a ZIP can lose the mark that says they may be run. In that case open a terminal inside the `launchers` folder and type `sh boot-mac.command` or `sh boot-linux.sh`. Typing `chmod +x boot-linux.sh boot-mac.command` once gives the mark back, and then double-clicking works.
+**If the double-click does nothing**, or the window opens and closes at once, something on your system is getting in the way. That is not a broken download. Start it from a terminal instead, it shows the real error message and always works the same way.
+
+First open a terminal inside the unzipped project folder:
+
+- Windows: open the folder, click an empty spot, hold Shift and right-click, then choose Open PowerShell window here. On Windows 11 choose Open in Terminal.
+- macOS: open Terminal, type `cd ` (with a space), drag the folder into the window and press Enter.
+- Linux: right-click an empty spot in the folder and choose Open in Terminal.
+
+Then run one of these, and if one fails try the next:
+
+| System | Command |
+|---|---|
+| Windows | `.\launchers\boot-windows.bat` |
+| Windows | `py launchers\boot.py` (or `python launchers\boot.py`) |
+| macOS | `sh launchers/boot-mac.command` |
+| Linux | `sh launchers/boot-linux.sh` |
+| macOS and Linux | `python3 launchers/boot.py` |
+| Any system | `PYTHONPATH=source python3 -m recon.gui` on macOS and Linux, or `$env:PYTHONPATH="source"; py -m recon.gui` in PowerShell |
+
+If the message says Python was not found, go back to section 1.1. If the message says permission denied, type `chmod +x launchers/boot-linux.sh launchers/boot-mac.command` once and double-click again. The launchers are stored as runnable files, but some ZIP tools drop that flag, and some Linux file managers open `.sh` files in a text editor instead of running them.
 
 ### 1.3 Clone it with git
 
@@ -299,7 +318,7 @@ These files start the web interface without installing anything. Python 3.10 or 
 
 `boot.py` is the adapter behind them. It detects the system, finds the distribution on Linux (Debian, Ubuntu, Mint, Fedora, RHEL, Arch, openSUSE, Alpine, Void, Gentoo, NixOS and the systems based on them), checks the Python version and starts `recon-gui`. `python launchers/boot.py --list` shows the install hints for every system, and `python launchers/boot.py --os mac` shows the hint for one. Options such as `--port 9000` or `--no-browser` are passed on to the interface.
 
-Files that come from a download or a web upload on GitHub lose their "runnable" mark. If a double-click does nothing on macOS or Linux, open a terminal in the `launchers` folder and type `sh boot-mac.command` or `sh boot-linux.sh` once, or `chmod +x boot-linux.sh boot-mac.command` to make them double-clickable.
+The Mac and Linux launchers carry the "runnable" mark in the repository, so a `git clone` and the ZIP from GitHub keep it. If a double-click still does nothing, section 1.2 lists the commands to start it from PowerShell or a terminal instead.
 
 ## 5. Using the command line
 
