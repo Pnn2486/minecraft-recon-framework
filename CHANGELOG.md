@@ -29,6 +29,7 @@ All notable changes are listed here, newest first. Version numbers go major.mino
 - The Inter font (regular and semibold, only Latin and Vietnamese letters, about 80 KB) is included in the project together with its license, so the page doesn't load anything from the internet. The page's security rules now allow fonts from the page itself
 
 ### Fixed
+- The Mac and Linux launchers and the two scripts are now stored as runnable files, so a double-click works after a clone or a ZIP download
 - A server can no longer make the client read or unpack an unlimited amount of data, packets over 8 MiB are refused
 - A status reply that is not a JSON object no longer crashes the client
 - An RCON password or command that starts with a dash now works in the web interface
